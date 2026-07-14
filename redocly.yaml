@@ -1,0 +1,5 @@
+extends:
+  - minimal
+apis:
+  device@v1:
+    root: api/openapi/udal/v1/device.openapi.v3.json

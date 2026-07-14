@@ -1248,8 +1248,8 @@ const file_udal_v1_device_proto_rawDesc = "" +
 	"\vGetProperty\x12\x1b.udal.v1.GetPropertyRequest\x1a\x1c.udal.v1.GetPropertyResponse\"=\x82\xd3\xe4\x93\x027\x125/v1/devices/{device_id}/properties/{property_path=**}\x12\x8e\x01\n" +
 	"\vSetProperty\x12\x1b.udal.v1.SetPropertyRequest\x1a\x1c.udal.v1.SetPropertyResponse\"D\x82\xd3\xe4\x93\x02>:\x05value\x1a5/v1/devices/{device_id}/properties/{property_path=**}\x12\x84\x01\n" +
 	"\vSendCommand\x12\x1b.udal.v1.SendCommandRequest\x1a\x1c.udal.v1.SendCommandResponse\":\x82\xd3\xe4\x93\x024:\x06params\"*/v1/devices/{device_id}/commands/{command}\x12F\n" +
-	"\tSubscribe\x12\x19.udal.v1.SubscribeRequest\x1a\x1a.udal.v1.SubscribeResponse\"\x000\x01B\x8a\x01\n" +
-	"\vcom.udal.v1B\vDeviceProtoP\x01Z1github.com/paulefl/udal/api/gen/go/udal/v1;udalv1\xa2\x02\x03UXX\xaa\x02\aUdal.V1\xca\x02\aUdal\\V1\xe2\x02\x13Udal\\V1\\GPBMetadata\xea\x02\bUdal::V1b\x06proto3"
+	"\tSubscribe\x12\x19.udal.v1.SubscribeRequest\x1a\x1a.udal.v1.SubscribeResponse\"\x000\x01B\x8d\x01\n" +
+	"\vcom.udal.v1B\vDeviceProtoP\x01Z4github.com/paulefl/udal/api/proto/gen/udal/v1;udalv1\xa2\x02\x03UXX\xaa\x02\aUdal.V1\xca\x02\aUdal\\V1\xe2\x02\x13Udal\\V1\\GPBMetadata\xea\x02\bUdal::V1b\x06proto3"
 
 var (
 	file_udal_v1_device_proto_rawDescOnce sync.Once

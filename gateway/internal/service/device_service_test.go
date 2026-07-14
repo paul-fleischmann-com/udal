@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	udalv1 "github.com/paulefl/udal/api/gen/go/udal/v1"
+	udalv1 "github.com/paulefl/udal/api/proto/gen/udal/v1"
 	"github.com/paulefl/udal/gateway/internal/api"
 	"github.com/paulefl/udal/gateway/internal/registry"
 	"github.com/paulefl/udal/gateway/internal/service"

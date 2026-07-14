@@ -6,7 +6,7 @@ import "google/api/annotations.proto";
 import "google/protobuf/struct.proto";
 import "google/protobuf/timestamp.proto";
 
-option go_package = "github.com/paulefl/udal/api/gen/go/udal/v1;udalv1";
+option go_package = "github.com/paulefl/udal/api/proto/gen/udal/v1;udalv1";
 
 // ─── Common types ─────────────────────────────────────────────────────────────
 

@@ -1,4 +1,4 @@
-module github.com/paulefl/udal/api/gen/go
+module github.com/paulefl/udal/api/proto/gen
 
 go 1.22
 
