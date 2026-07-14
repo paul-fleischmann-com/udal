@@ -1,10 +1,21 @@
-.PHONY: generate build test lint check install-tools
+.PHONY: generate generate-openapi-v3 validate-openapi-v3 build test lint check install-tools
 
 GOBIN ?= $(shell go env GOPATH)/bin
 
-# Generate Go + OpenAPI from proto definitions (requires buf + remote plugins access)
+# Generate Go + OpenAPI (v2) from proto definitions (requires buf + remote plugins access)
 generate:
 	buf generate
+	$(MAKE) generate-openapi-v3
+
+# Convert the generated OpenAPI v2 (Swagger) spec to OpenAPI v3
+generate-openapi-v3:
+	npx --yes swagger2openapi api/openapi/udal/v1/device.swagger.json \
+		--outfile api/openapi/udal/v1/device.openapi.v3.json \
+		--patch
+
+# Validate the OpenAPI v3 spec (structural validity, see redocly.yaml)
+validate-openapi-v3:
+	npx --yes @redocly/cli lint
 
 # Build the gateway binary
 build:
@@ -19,7 +30,7 @@ lint:
 	cd gateway && golangci-lint run ./...
 
 # Run all checks (lint + test)
-check: lint test
+check: lint test validate-openapi-v3
 
 # Install required tools
 install-tools:
