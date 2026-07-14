@@ -9,7 +9,8 @@ Issue #7 überschneidet sich stark mit dem bereits per PR #13 gemergten Issue #2
   ListDevices, DeleteDevice, GetProperty, SetProperty, SendCommand, Subscribe streaming)
 - `buf.yaml` / `buf.gen.yaml` — buf v2 Setup mit Remote-Plugins (protoc-gen-go, grpc-go,
   grpc-gateway, openapiv2)
-- `api/gen/go/udal/v1/*.pb.go` — eingecheckter generierter Go-Code
+- `api/gen/go/udal/v1/*.pb.go` — eingecheckter generierter Go-Code (Pfad zunächst abweichend von der
+  Issue-Formulierung `api/proto/gen/`, siehe Phase 4)
 - `api/openapi/udal/v1/device.swagger.json` — generierte Spec, aber **Swagger 2.0**, keine OpenAPI v3
 - `buf breaking` bereits in `.github/workflows/ci.yml` (`proto-ci` Job) verankert
 - `PropertyValue` oneof deckt bool/int64/double/string/bytes ab; `google.protobuf.Value`
@@ -20,7 +21,7 @@ Issue #7 überschneidet sich stark mit dem bereits per PR #13 gemergten Issue #2
 | AC | Status | Anmerkung |
 |----|--------|-----------|
 | Proto compiles mit protoc + grpc-gateway | ✅ erfüllt | `proto-ci` Job führt `buf generate` aus |
-| Generierter Go-Code eingecheckt in `api/proto/gen/` | ✅ erfüllt (abweichender Pfad `api/gen/go/`) | Pfad ist Projektkonvention aus PR #13 / CONTRIBUTING.md — nicht ändern, nur im PR dokumentieren |
+| Generierter Go-Code eingecheckt in `api/proto/gen/` | ✅ erfüllt (nach Phase 4) | ursprünglich unter `api/gen/go/` (PR #13); auf Wunsch des Users wortwörtlich auf `api/proto/gen/` umgezogen |
 | OpenAPI v3 Spec generiert und validiert | ❌ **Lücke** | aktuell nur Swagger 2.0 — muss ergänzt werden |
 | `buf breaking` in CI | ✅ erfüllt | bereits vorhanden |
 | Value type: bool, int64, float64, string, bytes, null | ✅ erfüllt | `PropertyValue` oneof + `google.protobuf.Value` |
@@ -45,6 +46,15 @@ Der Rest von Issue #7 ist bereits durch PR #13 abgedeckt.
 ### Phase 3 — Dokumentation
 - CONTRIBUTING.md / arc42 kurz ergänzen: OpenAPI v3 Datei-Pfad und Regenerierungs-Workflow
 - Issue-AC-Tabelle im PR-Description dokumentieren (inkl. Begründung für abweichenden Go-Gen-Pfad)
+
+### Phase 4 — Go-Gen-Pfad exakt an Issue-Wortlaut angleichen
+- `api/gen/go/` → `api/proto/gen/` verschieben (eigenes Go-Modul, referenziert über `go.work` +
+  `replace`-Directive in `gateway/go.mod`)
+- `buf.gen.yaml` (`out:`-Pfade + `go_package_prefix`), `device.proto` (`option go_package`),
+  Go-Imports in `gateway/` und `.gitignore` (enthielt bereits eine — bis dahin nie genutzte —
+  Ignore-Regel für genau diesen Pfad) entsprechend anpassen
+- Neu generieren, `go build`/`go test` für `gateway/...` und `buf lint` verifizieren
+- CONTRIBUTING.md / req42.adoc Pfadangaben korrigieren
 
 ## Risiken / offene Punkte
 

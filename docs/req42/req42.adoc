@@ -817,7 +817,7 @@ Quality
 
 | Primary API
 | gRPC / protobuf over TLS
-| Service definition in `api/proto/`; generated stubs in `api/gen/go/`
+| Service definition in `api/proto/`; generated stubs in `api/proto/gen/`
 
 | REST Gateway
 | HTTPS + JSON

@@ -30,6 +30,3 @@ udal-capability.db
 *.pem
 *.key
 *.crt
-
-# Build
-api/proto/gen/

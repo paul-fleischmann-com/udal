@@ -72,7 +72,7 @@ udal/
 ├── sdk/typescript/        # TypeScript / Node.js SDK
 ├── dashboard/             # Python Reflex reference dashboard
 ├── api/proto/             # Protobuf definitions (source of truth for API)
-├── api/gen/go/            # Generated Go stubs (protoc-gen-go, grpc, grpc-gateway) — do not edit manually
+├── api/proto/gen/         # Generated Go stubs (protoc-gen-go, grpc, grpc-gateway) — do not edit manually
 ├── api/openapi/           # Generated OpenAPI v2 (Swagger) + v3 spec — do not edit manually
 ├── docs/
 │   ├── arc42/             # arc42 architecture document
@@ -187,7 +187,7 @@ Breaking changes: append `!` after scope and add `BREAKING CHANGE:` in footer.
 - Breaking changes require a new major version and an ADR
 - `buf breaking` is enforced in CI — you will not accidentally break the API
 - After changing a `.proto` file, run `make generate` to regenerate:
-  - Go stubs in `api/gen/go/`
+  - Go stubs in `api/proto/gen/`
   - OpenAPI v2 spec in `api/openapi/udal/v1/device.swagger.json` (via buf's `grpc-ecosystem/openapiv2` plugin)
   - OpenAPI v3 spec in `api/openapi/udal/v1/device.openapi.v3.json` (converted from the v2 spec via `swagger2openapi`)
 - `make validate-openapi-v3` checks the v3 spec is structurally valid (`redocly.yaml`, minimal ruleset — the
