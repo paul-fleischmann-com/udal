@@ -48,7 +48,10 @@ func (s *DeviceService) GetDevice(_ context.Context, req *udalv1.GetDeviceReques
 }
 
 func (s *DeviceService) ListDevices(_ context.Context, req *udalv1.ListDevicesRequest) (*udalv1.ListDevicesResponse, error) {
-	devices, err := s.reg.List(req.GetCapability(), req.GetTransport())
+	devices, err := s.reg.List(registry.ListFilter{
+		Capability: req.GetCapability(),
+		Transport:  req.GetTransport(),
+	})
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "registry list: %v", err)
 	}
