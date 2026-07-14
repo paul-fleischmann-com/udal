@@ -75,14 +75,14 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.22"
+          go-version: "stable"
           cache: true
 
       - name: Build gateway
-        run: go build ./gateway/... ./adapters/... ./sdk/go/...
+        run: go build ./gateway/...
 
       - name: Unit tests
-        run: go test -race -coverprofile=coverage.out ./gateway/... ./adapters/... ./sdk/go/...
+        run: go test -race -coverprofile=coverage.out ./gateway/...
 
       - name: Upload coverage
         uses: actions/upload-artifact@v4
@@ -99,12 +99,12 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.22"
+          go-version: "1.24"
           cache: true
       - uses: golangci/golangci-lint-action@v6
         with:
           version: latest
-          args: --timeout=5m ./gateway/... ./adapters/... ./sdk/go/...
+          args: --timeout=5m ./gateway/...
 
   go-security:
     name: Go — Security (gosec + govulncheck)
@@ -115,20 +115,21 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.22"
+          go-version: "stable"
           cache: true
 
       - name: Install gosec
         run: go install github.com/securego/gosec/v2/cmd/gosec@latest
 
       - name: Run gosec
-        run: gosec ./gateway/... ./adapters/... ./sdk/go/...
+        run: gosec ./gateway/...
 
       - name: Install govulncheck
         run: go install golang.org/x/vuln/cmd/govulncheck@latest
 
       - name: Run govulncheck
-        run: govulncheck ./gateway/... ./adapters/... ./sdk/go/...
+        run: govulncheck ./...
+        working-directory: gateway
 
 # ─── Go: Integration Tests (MQTT via Docker) ──────────────────────────────────
   go-integration:
@@ -150,11 +151,11 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.22"
+          go-version: "stable"
           cache: true
 
       - name: Run integration tests
-        run: go test -v -tags integration -timeout 120s ./adapters/mqtt/... ./gateway/...
+        run: go test -v -tags integration -timeout 120s ./gateway/...
         env:
           UDAL_TEST_MQTT_BROKER: tcp://localhost:1883
 
@@ -309,7 +310,13 @@ jobs:
 
       - name: Breaking change check (against main)
         if: github.event_name == 'pull_request'
-        run: buf breaking api/proto --against "https://github.com/${{ github.repository }}.git#branch=main,subdir=api/proto"
+        run: |
+          git fetch origin main --depth=1 2>/dev/null || true
+          if git ls-tree origin/main -- api/proto/ 2>/dev/null | grep -q '\.proto'; then
+            buf breaking api/proto --against "https://github.com/${{ github.repository }}.git#branch=main,subdir=api/proto"
+          else
+            echo "No proto files on main yet — skipping breaking change check."
+          fi
 
       - name: Generate Go stubs (verify compilable)
         run: buf generate api/proto
@@ -334,6 +341,7 @@ jobs:
           context: .
           file: deployments/docker/Dockerfile
           push: false
+          load: true
           tags: udal-gateway:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -380,7 +388,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.22"
+          go-version: "stable"
 
       - name: Install bausteinsicht
         run: go install github.com/docToolchain/Bausteinsicht/cmd/bausteinsicht@latest

@@ -1,0 +1,475 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "udal/v1/device.proto",
+    "version": "version not set"
+  },
+  "tags": [
+    {
+      "name": "DeviceService"
+    }
+  ],
+  "consumes": [
+    "application/json"
+  ],
+  "produces": [
+    "application/json"
+  ],
+  "paths": {
+    "/v1/devices": {
+      "get": {
+        "operationId": "DeviceService_ListDevices",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListDevicesResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "capability",
+            "description": "filter by capability name; empty = all",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "transport",
+            "description": "filter by transport; empty = all",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          },
+          {
+            "name": "pageToken",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "DeviceService"
+        ]
+      },
+      "post": {
+        "operationId": "DeviceService_RegisterDevice",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1RegisterDeviceResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1RegisterDeviceRequest"
+            }
+          }
+        ],
+        "tags": [
+          "DeviceService"
+        ]
+      }
+    },
+    "/v1/devices/{deviceId}/commands/{command}": {
+      "post": {
+        "summary": "Command execution",
+        "operationId": "DeviceService_SendCommand",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1SendCommandResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "deviceId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "command",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "params",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "type": "object"
+            }
+          }
+        ],
+        "tags": [
+          "DeviceService"
+        ]
+      }
+    },
+    "/v1/devices/{deviceId}/properties/{propertyPath}": {
+      "get": {
+        "summary": "Property access",
+        "operationId": "DeviceService_GetProperty",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetPropertyResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "deviceId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "propertyPath",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "pattern": ".+"
+          }
+        ],
+        "tags": [
+          "DeviceService"
+        ]
+      },
+      "put": {
+        "operationId": "DeviceService_SetProperty",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1SetPropertyResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "deviceId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "propertyPath",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "pattern": ".+"
+          },
+          {
+            "name": "value",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1PropertyValue"
+            }
+          }
+        ],
+        "tags": [
+          "DeviceService"
+        ]
+      }
+    },
+    "/v1/devices/{id}": {
+      "get": {
+        "summary": "Device registry",
+        "operationId": "DeviceService_GetDevice",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetDeviceResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "DeviceService"
+        ]
+      },
+      "delete": {
+        "operationId": "DeviceService_DeleteDevice",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1DeleteDeviceResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "DeviceService"
+        ]
+      }
+    }
+  },
+  "definitions": {
+    "protobufAny": {
+      "type": "object",
+      "properties": {
+        "@type": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": {}
+    },
+    "protobufNullValue": {
+      "type": "string",
+      "enum": [
+        "NULL_VALUE"
+      ],
+      "default": "NULL_VALUE",
+      "description": "`NullValue` is a singleton enumeration to represent the null value for the\n`Value` type union.\n\nThe JSON representation for `NullValue` is JSON `null`.\n\n - NULL_VALUE: Null value."
+    },
+    "rpcStatus": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "message": {
+          "type": "string"
+        },
+        "details": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/protobufAny"
+          }
+        }
+      }
+    },
+    "v1DeleteDeviceResponse": {
+      "type": "object"
+    },
+    "v1Device": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "capability": {
+          "type": "string",
+          "title": "capability schema name, e.g. \"temperature-sensor\""
+        },
+        "transport": {
+          "type": "string",
+          "title": "\"mqtt\" | \"http\" | \"can\""
+        },
+        "status": {
+          "$ref": "#/definitions/v1DeviceStatus"
+        },
+        "lastSeen": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "labels": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      },
+      "description": "A registered device."
+    },
+    "v1DeviceStatus": {
+      "type": "string",
+      "enum": [
+        "DEVICE_STATUS_UNSPECIFIED",
+        "DEVICE_STATUS_ONLINE",
+        "DEVICE_STATUS_OFFLINE",
+        "DEVICE_STATUS_UNKNOWN"
+      ],
+      "default": "DEVICE_STATUS_UNSPECIFIED",
+      "description": "Status of a registered device."
+    },
+    "v1GetDeviceResponse": {
+      "type": "object",
+      "properties": {
+        "device": {
+          "$ref": "#/definitions/v1Device"
+        }
+      }
+    },
+    "v1GetPropertyResponse": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "$ref": "#/definitions/v1PropertyValue"
+        }
+      }
+    },
+    "v1ListDevicesResponse": {
+      "type": "object",
+      "properties": {
+        "devices": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Device"
+          }
+        },
+        "nextPageToken": {
+          "type": "string"
+        }
+      }
+    },
+    "v1PropertyValue": {
+      "type": "object",
+      "properties": {
+        "boolVal": {
+          "type": "boolean"
+        },
+        "intVal": {
+          "type": "string",
+          "format": "int64"
+        },
+        "floatVal": {
+          "type": "number",
+          "format": "double"
+        },
+        "stringVal": {
+          "type": "string"
+        },
+        "bytesVal": {
+          "type": "string",
+          "format": "byte"
+        },
+        "jsonVal": {
+          "description": "Structured value (object / array) encoded as JSON."
+        }
+      },
+      "description": "A typed property value."
+    },
+    "v1RegisterDeviceRequest": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "capability": {
+          "type": "string"
+        },
+        "transport": {
+          "type": "string"
+        },
+        "labels": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "transportConfig": {
+          "type": "object",
+          "description": "Transport-specific connection parameters (e.g. MQTT topic prefix, HTTP base URL)."
+        }
+      }
+    },
+    "v1RegisterDeviceResponse": {
+      "type": "object",
+      "properties": {
+        "device": {
+          "$ref": "#/definitions/v1Device"
+        }
+      }
+    },
+    "v1SendCommandResponse": {
+      "type": "object",
+      "properties": {
+        "result": {}
+      }
+    },
+    "v1SetPropertyResponse": {
+      "type": "object",
+      "properties": {
+        "newValue": {
+          "$ref": "#/definitions/v1PropertyValue"
+        }
+      }
+    }
+  }
+}

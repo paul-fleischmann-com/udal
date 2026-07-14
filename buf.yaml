@@ -1,0 +1,18 @@
+version: v2
+
+modules:
+  - path: api/proto
+    name: buf.build/paulefl/udal
+
+deps:
+  - buf.build/googleapis/googleapis
+
+lint:
+  use:
+    - DEFAULT
+  except:
+    - FIELD_NOT_REQUIRED   # we use proto3 optional semantics via oneof
+
+breaking:
+  use:
+    - FILE

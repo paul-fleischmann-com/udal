@@ -1,0 +1,162 @@
+syntax = "proto3";
+
+package udal.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/paulefl/udal/api/gen/go/udal/v1;udalv1";
+
+// ─── Common types ─────────────────────────────────────────────────────────────
+
+// Status of a registered device.
+enum DeviceStatus {
+  DEVICE_STATUS_UNSPECIFIED = 0;
+  DEVICE_STATUS_ONLINE      = 1;
+  DEVICE_STATUS_OFFLINE     = 2;
+  DEVICE_STATUS_UNKNOWN     = 3;
+}
+
+// A registered device.
+message Device {
+  string               id           = 1;
+  string               name         = 2;
+  string               capability   = 3;  // capability schema name, e.g. "temperature-sensor"
+  string               transport    = 4;  // "mqtt" | "http" | "can"
+  DeviceStatus         status       = 5;
+  google.protobuf.Timestamp last_seen = 6;
+  map<string, string>  labels       = 7;
+}
+
+// A typed property value.
+message PropertyValue {
+  oneof value {
+    bool   bool_val   = 1;
+    int64  int_val    = 2;
+    double float_val  = 3;
+    string string_val = 4;
+    bytes  bytes_val  = 5;
+    // Structured value (object / array) encoded as JSON.
+    google.protobuf.Value json_val = 6;
+  }
+}
+
+// ─── DeviceService ────────────────────────────────────────────────────────────
+
+service DeviceService {
+
+  // Device registry
+  rpc GetDevice(GetDeviceRequest) returns (GetDeviceResponse) {
+    option (google.api.http) = {
+      get: "/v1/devices/{id}"
+    };
+  }
+
+  rpc ListDevices(ListDevicesRequest) returns (ListDevicesResponse) {
+    option (google.api.http) = {
+      get: "/v1/devices"
+    };
+  }
+
+  rpc RegisterDevice(RegisterDeviceRequest) returns (RegisterDeviceResponse) {
+    option (google.api.http) = {
+      post: "/v1/devices"
+      body: "*"
+    };
+  }
+
+  rpc DeleteDevice(DeleteDeviceRequest) returns (DeleteDeviceResponse) {
+    option (google.api.http) = {
+      delete: "/v1/devices/{id}"
+    };
+  }
+
+  // Property access
+  rpc GetProperty(GetPropertyRequest) returns (GetPropertyResponse) {
+    option (google.api.http) = {
+      get: "/v1/devices/{device_id}/properties/{property_path=**}"
+    };
+  }
+
+  rpc SetProperty(SetPropertyRequest) returns (SetPropertyResponse) {
+    option (google.api.http) = {
+      put: "/v1/devices/{device_id}/properties/{property_path=**}"
+      body: "value"
+    };
+  }
+
+  // Command execution
+  rpc SendCommand(SendCommandRequest) returns (SendCommandResponse) {
+    option (google.api.http) = {
+      post: "/v1/devices/{device_id}/commands/{command}"
+      body: "params"
+    };
+  }
+
+  // Streaming
+  rpc Subscribe(SubscribeRequest) returns (stream SubscribeResponse) {
+    // WebSocket / SSE via grpc-gateway streaming — no HTTP annotation (streaming not supported by grpc-gateway v2 REST mapping)
+  }
+}
+
+// ─── Request / Response messages ─────────────────────────────────────────────
+
+message GetDeviceRequest  { string id = 1; }
+message GetDeviceResponse { Device device = 1; }
+
+message ListDevicesRequest {
+  string capability = 1;  // filter by capability name; empty = all
+  string transport  = 2;  // filter by transport; empty = all
+  int32  page_size  = 3;
+  string page_token = 4;
+}
+message ListDevicesResponse {
+  repeated Device devices        = 1;
+  string          next_page_token = 2;
+}
+
+message RegisterDeviceRequest {
+  string              name       = 1;
+  string              capability = 2;
+  string              transport  = 3;
+  map<string, string> labels     = 4;
+  // Transport-specific connection parameters (e.g. MQTT topic prefix, HTTP base URL).
+  google.protobuf.Struct transport_config = 5;
+}
+message RegisterDeviceResponse { Device device = 1; }
+
+message DeleteDeviceRequest  { string id = 1; }
+message DeleteDeviceResponse {}
+
+message GetPropertyRequest {
+  string device_id     = 1;
+  string property_path = 2;
+}
+message GetPropertyResponse { PropertyValue value = 1; }
+
+message SetPropertyRequest {
+  string        device_id     = 1;
+  string        property_path = 2;
+  PropertyValue value         = 3;
+}
+message SetPropertyResponse { PropertyValue new_value = 1; }
+
+message SendCommandRequest {
+  string                 device_id = 1;
+  string                 command   = 2;
+  google.protobuf.Struct params    = 3;
+}
+message SendCommandResponse { google.protobuf.Value result = 1; }
+
+message SubscribeRequest {
+  string device_id     = 1;
+  string property_path = 2;  // empty = subscribe to all properties
+}
+// SubscribeResponse is one streamed event from the Subscribe RPC.
+message SubscribeResponse {
+  string                    device_id     = 1;
+  string                    property_path = 2;
+  PropertyValue             value         = 3;
+  google.protobuf.Timestamp timestamp     = 4;
+}

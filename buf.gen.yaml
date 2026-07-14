@@ -1,0 +1,31 @@
+version: v2
+
+managed:
+  enabled: true
+  override:
+    - file_option: go_package_prefix
+      value: github.com/paulefl/udal/api/gen/go
+      module: buf.build/paulefl/udal
+
+plugins:
+  - remote: buf.build/protocolbuffers/go
+    out: api/gen/go
+    opt:
+      - paths=source_relative
+
+  - remote: buf.build/grpc/go
+    out: api/gen/go
+    opt:
+      - paths=source_relative
+      - require_unimplemented_servers=true
+
+  - remote: buf.build/grpc-ecosystem/gateway
+    out: api/gen/go
+    opt:
+      - paths=source_relative
+      - generate_unbound_methods=true
+
+  - remote: buf.build/grpc-ecosystem/openapiv2
+    out: api/openapi
+    opt:
+      - logtostderr=true
