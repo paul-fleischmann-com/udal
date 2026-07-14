@@ -54,8 +54,10 @@ jobs:
               - 'sdk/python/**'
             proto:
               - 'api/proto/**'
+              - 'api/openapi/**'
               - 'buf.yaml'
               - 'buf.gen.yaml'
+              - 'redocly.yaml'
             docker:
               - 'gateway/**'
               - 'deployments/docker/**'
@@ -320,6 +322,15 @@ jobs:
 
       - name: Generate Go stubs (verify compilable)
         run: buf generate api/proto
+
+      - name: Generate OpenAPI v3 spec
+        run: |
+          npx --yes swagger2openapi api/openapi/udal/v1/device.swagger.json \
+            --outfile api/openapi/udal/v1/device.openapi.v3.json \
+            --patch
+
+      - name: Validate OpenAPI v3 spec
+        run: npx --yes @redocly/cli lint
 
 # ─── Docker ───────────────────────────────────────────────────────────────────
   docker-build:
