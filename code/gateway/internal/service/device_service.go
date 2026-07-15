@@ -8,9 +8,9 @@ import (
 	"fmt"
 	"time"
 
-	udalv1 "github.com/paulefl/udal/api/proto/gen/udal/v1"
-	"github.com/paulefl/udal/gateway/internal/api"
-	"github.com/paulefl/udal/gateway/internal/registry"
+	udalv1 "github.com/paulefl/udal/code/api/proto/gen/udal/v1"
+	"github.com/paulefl/udal/code/gateway/internal/api"
+	"github.com/paulefl/udal/code/gateway/internal/registry"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"

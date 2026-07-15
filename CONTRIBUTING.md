@@ -39,13 +39,13 @@ go build ./...
 go test ./...
 
 # Rust SDK
-cd sdk/rust && cargo build && cargo test
+cd code/sdk/rust && cargo build && cargo test
 
 # Python SDK
-cd sdk/python && pip install -e ".[dev]" && pytest
+cd code/sdk/python && pip install -e ".[dev]" && pytest
 
 # TypeScript SDK
-cd sdk/typescript && npm ci && npm test
+cd code/sdk/typescript && npm ci && npm test
 
 # Reflex Dashboard
 cd dashboard && pip install -e ".[dev]"
@@ -64,16 +64,18 @@ bausteinsicht validate --model architecture.jsonc
 ```
 udal/
 ├── architecture.jsonc     # Bausteinsicht architecture model — update when architecture changes
-├── gateway/               # Go — central runtime service
-├── adapters/              # Go — MQTT, HTTP, CAN transport adapters
-├── sdk/go/                # Go SDK (device + app)
-├── sdk/rust/              # Rust SDK (embedded)
-├── sdk/python/            # Python SDK (asyncio)
-├── sdk/typescript/        # TypeScript / Node.js SDK
+├── code/
+│   ├── gateway/           # Go — central runtime service
+│   ├── adapters/          # Go — MQTT, HTTP, CAN transport adapters
+│   ├── sdk/go/            # Go SDK (device + app)
+│   ├── sdk/rust/          # Rust SDK (embedded)
+│   ├── sdk/python/        # Python SDK (asyncio)
+│   ├── sdk/typescript/    # TypeScript / Node.js SDK
+│   └── api/
+│       ├── proto/         # Protobuf definitions (source of truth for API)
+│       ├── proto/gen/     # Generated Go stubs (protoc-gen-go, grpc, grpc-gateway) — do not edit manually
+│       └── openapi/       # Generated OpenAPI v2 (Swagger) + v3 spec — do not edit manually
 ├── dashboard/             # Python Reflex reference dashboard
-├── api/proto/             # Protobuf definitions (source of truth for API)
-├── api/proto/gen/         # Generated Go stubs (protoc-gen-go, grpc, grpc-gateway) — do not edit manually
-├── api/openapi/           # Generated OpenAPI v2 (Swagger) + v3 spec — do not edit manually
 ├── docs/
 │   ├── arc42/             # arc42 architecture document
 │   │   └── ADRs/          # Architecture Decision Records
@@ -176,20 +178,20 @@ Breaking changes: append `!` after scope and add `BREAKING CHANGE:` in footer.
 
 ### TypeScript SDK
 
-- `eslint` must pass (config in `sdk/typescript/.eslintrc.json`)
+- `eslint` must pass (config in `code/sdk/typescript/.eslintrc.json`)
 - `tsc --noEmit` (no TypeScript errors)
 - `npm audit` — no high/critical vulnerabilities
 - Exports: ESM + CJS dual build via `tsup`
 
 ### Protobuf API
 
-- All changes to `api/proto/` must pass `buf lint`
+- All changes to `code/api/proto/` must pass `buf lint`
 - Breaking changes require a new major version and an ADR
 - `buf breaking` is enforced in CI — you will not accidentally break the API
 - After changing a `.proto` file, run `make generate` to regenerate:
-  - Go stubs in `api/proto/gen/`
-  - OpenAPI v2 spec in `api/openapi/udal/v1/device.swagger.json` (via buf's `grpc-ecosystem/openapiv2` plugin)
-  - OpenAPI v3 spec in `api/openapi/udal/v1/device.openapi.v3.json` (converted from the v2 spec via `swagger2openapi`)
+  - Go stubs in `code/api/proto/gen/`
+  - OpenAPI v2 spec in `code/api/openapi/udal/v1/device.swagger.json` (via buf's `grpc-ecosystem/openapiv2` plugin)
+  - OpenAPI v3 spec in `code/api/openapi/udal/v1/device.openapi.v3.json` (converted from the v2 spec via `swagger2openapi`)
 - `make validate-openapi-v3` checks the v3 spec is structurally valid (`redocly.yaml`, minimal ruleset — the
   security/summary style rules are intentionally off since gateway-wide auth isn't documented per-operation yet)
 - Commit all regenerated files together with the `.proto` change

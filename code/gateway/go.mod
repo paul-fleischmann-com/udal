@@ -1,10 +1,10 @@
-module github.com/paulefl/udal/gateway
+module github.com/paulefl/udal/code/gateway
 
 go 1.24.0
 
 require (
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.20.0
-	github.com/paulefl/udal/api/proto/gen v0.0.0
+	github.com/paulefl/udal/code/api/proto/gen v0.0.0
 	go.etcd.io/bbolt v1.4.3
 	google.golang.org/grpc v1.79.3
 	google.golang.org/protobuf v1.36.10
@@ -18,4 +18,4 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20251202230838-ff82c1b0f217 // indirect
 )
 
-replace github.com/paulefl/udal/api/proto/gen => ../api/proto/gen
+replace github.com/paulefl/udal/code/api/proto/gen => ../api/proto/gen

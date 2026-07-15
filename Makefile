@@ -9,8 +9,8 @@ generate:
 
 # Convert the generated OpenAPI v2 (Swagger) spec to OpenAPI v3
 generate-openapi-v3:
-	npx --yes swagger2openapi api/openapi/udal/v1/device.swagger.json \
-		--outfile api/openapi/udal/v1/device.openapi.v3.json \
+	npx --yes swagger2openapi code/api/openapi/udal/v1/device.swagger.json \
+		--outfile code/api/openapi/udal/v1/device.openapi.v3.json \
 		--patch
 
 # Validate the OpenAPI v3 spec (structural validity, see redocly.yaml)
@@ -19,15 +19,15 @@ validate-openapi-v3:
 
 # Build the gateway binary
 build:
-	cd gateway && go build ./...
+	cd code/gateway && go build ./...
 
 # Run all tests
 test:
-	cd gateway && go test -race ./...
+	cd code/gateway && go test -race ./...
 
 # Run linter
 lint:
-	cd gateway && golangci-lint run ./...
+	cd code/gateway && golangci-lint run ./...
 
 # Run all checks (lint + test)
 check: lint test validate-openapi-v3

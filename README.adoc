@@ -38,21 +38,22 @@ See link:architecture.jsonc[architecture.jsonc] for the full model with system c
 ----
 udal/
 ├── architecture.jsonc     # Bausteinsicht architecture model
-├── gateway/               # Go — central gateway service
-│   ├── cmd/gateway/       # main entrypoint
-│   └── internal/          # api, auth, router, registry, capability, health
-├── adapters/              # Go — transport adapters
-│   ├── mqtt/              # MQTT v3.1.1 + v5
-│   ├── http/              # HTTP poll + webhook
-│   └── can/               # SocketCAN
-├── api/
-│   ├── proto/             # Protobuf definitions + generated code
-│   └── openapi/           # Generated OpenAPI v3 spec
-├── sdk/
-│   ├── go/                # Go SDK (device + application)
-│   ├── rust/              # Rust SDK (embedded, no_std optional)
-│   ├── python/            # Python SDK (asyncio)
-│   └── typescript/        # TypeScript / Node.js SDK
+├── code
+|    ├── gateway/               # Go — central gateway service
+|    │   ├── cmd/gateway/       # main entrypoint
+|    │   └── internal/          # api, auth, router, registry, capability, health
+|    ├── adapters/              # Go — transport adapters
+|    │   ├── mqtt/              # MQTT v3.1.1 + v5
+|    │   ├── http/              # HTTP poll + webhook
+|    │   └── can/               # SocketCAN
+|    ├── api/
+|    │   ├── proto/             # Protobuf definitions + generated code
+|    │   └── openapi/           # Generated OpenAPI v3 spec
+|    └── sdk/
+|        ├── go/                # Go SDK (device + application)
+|        ├── rust/              # Rust SDK (embedded, no_std optional)
+|        ├── python/            # Python SDK (asyncio)
+|        └── typescript/        # TypeScript / Node.js SDK
 ├── docs/
 │   ├── req42/req42.adoc   # Requirements (req42): Business Goals, Functional, Quality, Constraints, Interfaces
 │   └── arc42/ADRs/        # Architecture Decision Records
@@ -95,19 +96,19 @@ udal/
 |===
 | SDK | Language | Primary Use
 
-| link:sdk/go/[Go SDK]
+| link:code/sdk/go/[Go SDK]
 | Go
 | Device agents, backend services
 
-| link:sdk/rust/[Rust SDK]
+| link:code/sdk/rust/[Rust SDK]
 | Rust
 | Embedded devices, bare-metal, RTOS
 
-| link:sdk/python/[Python SDK]
+| link:code/sdk/python/[Python SDK]
 | Python
 | Prototyping, data science
 
-| link:sdk/typescript/[TypeScript SDK]
+| link:code/sdk/typescript/[TypeScript SDK]
 | TypeScript / Node.js
 | Web frontends, Node.js services
 |===
