@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"log/slog"
 	"net"
 	"net/http"
@@ -32,6 +33,8 @@ func main() {
 	tlsCertPath := os.Getenv("UDAL_TLS_CERT")
 	tlsKeyPath := os.Getenv("UDAL_TLS_KEY")
 	devInsecure := envOr("UDAL_DEV_INSECURE", "false") == "true"
+	mtlsCACertPath := os.Getenv("UDAL_MTLS_CA_CERT")
+	mtlsRequired := envOr("UDAL_MTLS_REQUIRED", "false") == "true"
 
 	if tlsCertPath == "" && !devInsecure {
 		log.Error("TLS is mandatory: set UDAL_TLS_CERT and UDAL_TLS_KEY, or explicitly opt out with UDAL_DEV_INSECURE=true for local development")
@@ -52,21 +55,56 @@ func main() {
 	// ─── gRPC server ─────────────────────────────────────────────────────────
 	var serverOpts []grpc.ServerOption
 	var dialCreds credentials.TransportCredentials
+	// tlsConfig is shared with the HTTP listener below (Server.TLSConfig) so
+	// mTLS requirements apply to both — Server.ListenAndServeTLS on its own
+	// builds a minimal config from the cert/key files and ignores ClientAuth.
+	var tlsConfig *tls.Config
 	if tlsCertPath != "" {
 		cert, err := tls.LoadX509KeyPair(tlsCertPath, tlsKeyPath)
 		if err != nil {
 			log.Error("load TLS certificate", "cert", tlsCertPath, "key", tlsKeyPath, "err", err)
 			os.Exit(1)
 		}
-		serverOpts = append(serverOpts, grpc.Creds(credentials.NewTLS(&tls.Config{
+		tlsConfig = &tls.Config{
 			Certificates: []tls.Certificate{cert},
 			MinVersion:   tls.VersionTLS12,
-		})))
+		}
+		if mtlsCACertPath != "" {
+			caPEM, err := os.ReadFile(mtlsCACertPath)
+			if err != nil {
+				log.Error("read mTLS CA certificate", "path", mtlsCACertPath, "err", err)
+				os.Exit(1)
+			}
+			caPool := x509.NewCertPool()
+			if !caPool.AppendCertsFromPEM(caPEM) {
+				log.Error("parse mTLS CA certificate: no valid certificates found", "path", mtlsCACertPath)
+				os.Exit(1)
+			}
+			tlsConfig.ClientCAs = caPool
+			if mtlsRequired {
+				tlsConfig.ClientAuth = tls.RequireAndVerifyClientCert
+			} else {
+				// F-17 "mTLS-optional mode": requests without a client cert
+				// fall through to API-Key/JWT auth instead of failing the
+				// handshake outright.
+				tlsConfig.ClientAuth = tls.VerifyClientCertIfGiven
+			}
+		}
+		serverOpts = append(serverOpts, grpc.Creds(credentials.NewTLS(tlsConfig)))
 		// The REST gateway below dials this exact server on loopback, in the same
 		// process — there is no network position for a MITM attacker to occupy, so
 		// skipping hostname verification here is safe even though the cert's SAN
 		// generally won't match the dial target.
-		dialCreds = credentials.NewTLS(&tls.Config{InsecureSkipVerify: true}) //nolint:gosec // see comment above
+		dialTLSConfig := &tls.Config{InsecureSkipVerify: true} //nolint:gosec // see comment above
+		if mtlsRequired {
+			// When mTLS is required, the TLS handshake itself rejects any
+			// connection without a client cert — including this internal
+			// loopback one. Present the gateway's own server cert as its
+			// client cert for this hop; it must be signed by (or chain to)
+			// UDAL_MTLS_CA_CERT for the handshake to succeed.
+			dialTLSConfig.Certificates = []tls.Certificate{cert}
+		}
+		dialCreds = credentials.NewTLS(dialTLSConfig)
 	} else {
 		log.Warn("starting without TLS (UDAL_DEV_INSECURE=true) — do not use in production")
 		dialCreds = insecure.NewCredentials()
@@ -104,6 +142,7 @@ func main() {
 	httpServer := &http.Server{
 		Addr:         httpAddr,
 		Handler:      mux,
+		TLSConfig:    tlsConfig,
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
 	}
@@ -112,7 +151,8 @@ func main() {
 		log.Info("REST gateway listening", "addr", httpAddr, "tls", tlsCertPath != "")
 		var serveErr error
 		if tlsCertPath != "" {
-			serveErr = httpServer.ListenAndServeTLS(tlsCertPath, tlsKeyPath)
+			// Cert/key already loaded into httpServer.TLSConfig.Certificates above.
+			serveErr = httpServer.ListenAndServeTLS("", "")
 		} else {
 			serveErr = httpServer.ListenAndServe()
 		}
