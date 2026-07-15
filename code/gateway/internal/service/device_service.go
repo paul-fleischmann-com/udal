@@ -22,13 +22,15 @@ import (
 // (not yet wired in v1 — SendCommand returns Unimplemented).
 type DeviceService struct {
 	udalv1.UnimplementedDeviceServiceServer
-	reg   registry.Registry
-	props api.PropertyStore
+	reg    registry.Registry
+	props  api.PropertyStore
+	broker *api.Broker
 }
 
-// New returns a DeviceService backed by the given Registry and PropertyStore.
-func New(reg registry.Registry, props api.PropertyStore) *DeviceService {
-	return &DeviceService{reg: reg, props: props}
+// New returns a DeviceService backed by the given Registry, PropertyStore,
+// and Broker (used to fan out Subscribe events).
+func New(reg registry.Registry, props api.PropertyStore, broker *api.Broker) *DeviceService {
+	return &DeviceService{reg: reg, props: props, broker: broker}
 }
 
 // ─── Device registry RPCs ─────────────────────────────────────────────────────
@@ -143,9 +145,64 @@ func (s *DeviceService) SetProperty(_ context.Context, req *udalv1.SetPropertyRe
 	if err := s.props.Set(req.GetDeviceId(), req.GetPropertyPath(), v); err != nil {
 		return nil, status.Errorf(codes.Internal, "set property: %v", err)
 	}
+	now := time.Now()
+	_ = s.reg.UpdateStatus(req.GetDeviceId(), api.DeviceStatusOnline, now)
+	s.broker.Publish(api.PropertyUpdate{
+		DeviceID:     req.GetDeviceId(),
+		PropertyPath: req.GetPropertyPath(),
+		Value:        v,
+		Timestamp:    now,
+	})
 	pbVal, _ := toProtoValue(v)
-	_ = s.reg.UpdateStatus(req.GetDeviceId(), api.DeviceStatusOnline, time.Now())
 	return &udalv1.SetPropertyResponse{NewValue: pbVal}, nil
+}
+
+// ─── Streaming RPC ────────────────────────────────────────────────────────────
+
+// Subscribe streams PropertyUpdate events for a device until the client
+// disconnects. If req.PropertyPath is set, only events for that exact path
+// are forwarded; otherwise every property update for the device is sent.
+func (s *DeviceService) Subscribe(req *udalv1.SubscribeRequest, stream udalv1.DeviceService_SubscribeServer) error {
+	if req.GetDeviceId() == "" {
+		return status.Error(codes.InvalidArgument, "device_id is required")
+	}
+	if _, err := s.reg.Get(req.GetDeviceId()); err != nil {
+		if errors.Is(err, registry.ErrNotFound) {
+			return status.Errorf(codes.NotFound, "device %q not found", req.GetDeviceId())
+		}
+		return status.Errorf(codes.Internal, "registry get: %v", err)
+	}
+
+	updates, unsubscribe := s.broker.Subscribe(req.GetDeviceId())
+	defer unsubscribe()
+
+	ctx := stream.Context()
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case update, ok := <-updates:
+			if !ok {
+				return nil
+			}
+			if req.GetPropertyPath() != "" && update.PropertyPath != req.GetPropertyPath() {
+				continue
+			}
+			pbVal, err := toProtoValue(update.Value)
+			if err != nil {
+				continue
+			}
+			err = stream.Send(&udalv1.SubscribeResponse{
+				DeviceId:     update.DeviceID,
+				PropertyPath: update.PropertyPath,
+				Value:        pbVal,
+				Timestamp:    timestamppb.New(update.Timestamp),
+			})
+			if err != nil {
+				return err
+			}
+		}
+	}
 }
 
 // ─── Command RPC ──────────────────────────────────────────────────────────────
