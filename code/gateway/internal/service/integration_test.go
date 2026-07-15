@@ -16,12 +16,17 @@ import (
 	"testing"
 	"time"
 
+	"path/filepath"
+
 	udalv1 "github.com/paulefl/udal/code/api/proto/gen/udal/v1"
 	"github.com/paulefl/udal/code/gateway/internal/api"
+	"github.com/paulefl/udal/code/gateway/internal/auth"
 	"github.com/paulefl/udal/code/gateway/internal/registry"
 	"github.com/paulefl/udal/code/gateway/internal/service"
+	"go.etcd.io/bbolt"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/metadata"
 )
 
 // selfSignedCert generates an ephemeral, in-memory self-signed TLS
@@ -70,11 +75,30 @@ func TestGatewayTLS_RegisterReadSubscribe(t *testing.T) {
 	broker := api.NewBroker()
 	svc := service.New(reg, props, broker)
 
+	keyDB, err := bbolt.Open(filepath.Join(t.TempDir(), "keys.db"), 0o600, nil)
+	if err != nil {
+		t.Fatalf("open api key db: %v", err)
+	}
+	defer keyDB.Close()
+	apiKeys, err := auth.NewAPIKeyStore(keyDB)
+	if err != nil {
+		t.Fatalf("NewAPIKeyStore: %v", err)
+	}
+	const rawAPIKey = "integration-test-admin-key"
+	if err := apiKeys.Put("integration-test-admin", auth.RoleAdmin, rawAPIKey); err != nil {
+		t.Fatalf("provision API key: %v", err)
+	}
+	authenticator := &auth.Authenticator{APIKeys: apiKeys}
+
 	cert := selfSignedCert(t)
-	grpcServer := grpc.NewServer(grpc.Creds(credentials.NewTLS(&tls.Config{
-		Certificates: []tls.Certificate{cert},
-		MinVersion:   tls.VersionTLS12,
-	})))
+	grpcServer := grpc.NewServer(
+		grpc.Creds(credentials.NewTLS(&tls.Config{
+			Certificates: []tls.Certificate{cert},
+			MinVersion:   tls.VersionTLS12,
+		})),
+		grpc.ChainUnaryInterceptor(authenticator.UnaryInterceptor),
+		grpc.ChainStreamInterceptor(authenticator.StreamInterceptor),
+	)
 	udalv1.RegisterDeviceServiceServer(grpcServer, svc)
 
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
@@ -101,6 +125,7 @@ func TestGatewayTLS_RegisterReadSubscribe(t *testing.T) {
 	client := udalv1.NewDeviceServiceClient(conn)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
+	ctx = metadata.AppendToOutgoingContext(ctx, "x-api-key", rawAPIKey)
 
 	regResp, err := client.RegisterDevice(ctx, &udalv1.RegisterDeviceRequest{
 		Name: "integration-sensor", Capability: "temperature-sensor", Transport: "mqtt",
@@ -128,6 +153,7 @@ func TestGatewayTLS_RegisterReadSubscribe(t *testing.T) {
 
 	subCtx, subCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer subCancel()
+	subCtx = metadata.AppendToOutgoingContext(subCtx, "x-api-key", rawAPIKey)
 	stream, err := client.Subscribe(subCtx, &udalv1.SubscribeRequest{DeviceId: deviceID})
 	if err != nil {
 		t.Fatalf("Subscribe: %v", err)

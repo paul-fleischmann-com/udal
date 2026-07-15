@@ -10,6 +10,7 @@ import (
 
 	udalv1 "github.com/paulefl/udal/code/api/proto/gen/udal/v1"
 	"github.com/paulefl/udal/code/gateway/internal/api"
+	"github.com/paulefl/udal/code/gateway/internal/auth"
 	"github.com/paulefl/udal/code/gateway/internal/registry"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -33,9 +34,31 @@ func New(reg registry.Registry, props api.PropertyStore, broker *api.Broker) *De
 	return &DeviceService{reg: reg, props: props, broker: broker}
 }
 
+// ─── Authorization helpers ────────────────────────────────────────────────────
+
+// authorize checks the caller (resolved by the AuthN interceptor and stored
+// in ctx) against RBAC + d's per-device ACL for op.
+func (s *DeviceService) authorize(ctx context.Context, op auth.Operation, d api.Device) error {
+	id, ok := auth.Authenticated(ctx)
+	if !ok {
+		return status.Error(codes.Unauthenticated, "no identity in context")
+	}
+	return auth.Authorize(id, op, d.ID, d.ACL)
+}
+
+// authorizeNoDevice is authorize for operations with no single target
+// device (RegisterDevice, ListDevices) — RBAC only, no ACL applies.
+func (s *DeviceService) authorizeNoDevice(ctx context.Context, op auth.Operation) error {
+	id, ok := auth.Authenticated(ctx)
+	if !ok {
+		return status.Error(codes.Unauthenticated, "no identity in context")
+	}
+	return auth.Authorize(id, op, "", nil)
+}
+
 // ─── Device registry RPCs ─────────────────────────────────────────────────────
 
-func (s *DeviceService) GetDevice(_ context.Context, req *udalv1.GetDeviceRequest) (*udalv1.GetDeviceResponse, error) {
+func (s *DeviceService) GetDevice(ctx context.Context, req *udalv1.GetDeviceRequest) (*udalv1.GetDeviceResponse, error) {
 	if req.GetId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "id is required")
 	}
@@ -46,10 +69,16 @@ func (s *DeviceService) GetDevice(_ context.Context, req *udalv1.GetDeviceReques
 		}
 		return nil, status.Errorf(codes.Internal, "registry get: %v", err)
 	}
+	if err := s.authorize(ctx, auth.OpGetDevice, d); err != nil {
+		return nil, err
+	}
 	return &udalv1.GetDeviceResponse{Device: toProtoDevice(d)}, nil
 }
 
-func (s *DeviceService) ListDevices(_ context.Context, req *udalv1.ListDevicesRequest) (*udalv1.ListDevicesResponse, error) {
+func (s *DeviceService) ListDevices(ctx context.Context, req *udalv1.ListDevicesRequest) (*udalv1.ListDevicesResponse, error) {
+	if err := s.authorizeNoDevice(ctx, auth.OpListDevices); err != nil {
+		return nil, err
+	}
 	devices, err := s.reg.List(registry.ListFilter{
 		Capability: req.GetCapability(),
 		Transport:  req.GetTransport(),
@@ -64,7 +93,7 @@ func (s *DeviceService) ListDevices(_ context.Context, req *udalv1.ListDevicesRe
 	return &udalv1.ListDevicesResponse{Devices: pb}, nil
 }
 
-func (s *DeviceService) RegisterDevice(_ context.Context, req *udalv1.RegisterDeviceRequest) (*udalv1.RegisterDeviceResponse, error) {
+func (s *DeviceService) RegisterDevice(ctx context.Context, req *udalv1.RegisterDeviceRequest) (*udalv1.RegisterDeviceResponse, error) {
 	if req.GetName() == "" {
 		return nil, status.Error(codes.InvalidArgument, "name is required")
 	}
@@ -73,6 +102,9 @@ func (s *DeviceService) RegisterDevice(_ context.Context, req *udalv1.RegisterDe
 	}
 	if req.GetTransport() == "" {
 		return nil, status.Error(codes.InvalidArgument, "transport is required")
+	}
+	if err := s.authorizeNoDevice(ctx, auth.OpRegisterDevice); err != nil {
+		return nil, err
 	}
 	d, err := s.reg.Register(api.Device{
 		Name:       req.GetName(),
@@ -89,9 +121,18 @@ func (s *DeviceService) RegisterDevice(_ context.Context, req *udalv1.RegisterDe
 	return &udalv1.RegisterDeviceResponse{Device: toProtoDevice(d)}, nil
 }
 
-func (s *DeviceService) DeleteDevice(_ context.Context, req *udalv1.DeleteDeviceRequest) (*udalv1.DeleteDeviceResponse, error) {
+func (s *DeviceService) DeleteDevice(ctx context.Context, req *udalv1.DeleteDeviceRequest) (*udalv1.DeleteDeviceResponse, error) {
 	if req.GetId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "id is required")
+	}
+	// DeleteDevice isn't in req42.adoc F-19's RBAC table; treated as
+	// admin/operator-only (see plan doc) with no per-device ACL override.
+	id, ok := auth.Authenticated(ctx)
+	if !ok {
+		return nil, status.Error(codes.Unauthenticated, "no identity in context")
+	}
+	if err := auth.Authorize(id, auth.OpDeleteDevice, req.GetId(), nil); err != nil {
+		return nil, err
 	}
 	if err := s.reg.Delete(req.GetId()); err != nil {
 		if errors.Is(err, registry.ErrNotFound) {
@@ -104,18 +145,22 @@ func (s *DeviceService) DeleteDevice(_ context.Context, req *udalv1.DeleteDevice
 
 // ─── Property RPCs ────────────────────────────────────────────────────────────
 
-func (s *DeviceService) GetProperty(_ context.Context, req *udalv1.GetPropertyRequest) (*udalv1.GetPropertyResponse, error) {
+func (s *DeviceService) GetProperty(ctx context.Context, req *udalv1.GetPropertyRequest) (*udalv1.GetPropertyResponse, error) {
 	if req.GetDeviceId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "device_id is required")
 	}
 	if req.GetPropertyPath() == "" {
 		return nil, status.Error(codes.InvalidArgument, "property_path is required")
 	}
-	if _, err := s.reg.Get(req.GetDeviceId()); err != nil {
+	d, err := s.reg.Get(req.GetDeviceId())
+	if err != nil {
 		if errors.Is(err, registry.ErrNotFound) {
 			return nil, status.Errorf(codes.NotFound, "device %q not found", req.GetDeviceId())
 		}
 		return nil, status.Errorf(codes.Internal, "registry get: %v", err)
+	}
+	if err := s.authorize(ctx, auth.OpGetProperty, d); err != nil {
+		return nil, err
 	}
 	v, err := s.props.Get(req.GetDeviceId(), req.GetPropertyPath())
 	if err != nil {
@@ -128,18 +173,22 @@ func (s *DeviceService) GetProperty(_ context.Context, req *udalv1.GetPropertyRe
 	return &udalv1.GetPropertyResponse{Value: pbVal}, nil
 }
 
-func (s *DeviceService) SetProperty(_ context.Context, req *udalv1.SetPropertyRequest) (*udalv1.SetPropertyResponse, error) {
+func (s *DeviceService) SetProperty(ctx context.Context, req *udalv1.SetPropertyRequest) (*udalv1.SetPropertyResponse, error) {
 	if req.GetDeviceId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "device_id is required")
 	}
 	if req.GetPropertyPath() == "" {
 		return nil, status.Error(codes.InvalidArgument, "property_path is required")
 	}
-	if _, err := s.reg.Get(req.GetDeviceId()); err != nil {
+	d, err := s.reg.Get(req.GetDeviceId())
+	if err != nil {
 		if errors.Is(err, registry.ErrNotFound) {
 			return nil, status.Errorf(codes.NotFound, "device %q not found", req.GetDeviceId())
 		}
 		return nil, status.Errorf(codes.Internal, "registry get: %v", err)
+	}
+	if err := s.authorize(ctx, auth.OpSetProperty, d); err != nil {
+		return nil, err
 	}
 	v := fromProtoValue(req.GetValue())
 	if err := s.props.Set(req.GetDeviceId(), req.GetPropertyPath(), v); err != nil {
@@ -166,11 +215,15 @@ func (s *DeviceService) Subscribe(req *udalv1.SubscribeRequest, stream udalv1.De
 	if req.GetDeviceId() == "" {
 		return status.Error(codes.InvalidArgument, "device_id is required")
 	}
-	if _, err := s.reg.Get(req.GetDeviceId()); err != nil {
+	d, err := s.reg.Get(req.GetDeviceId())
+	if err != nil {
 		if errors.Is(err, registry.ErrNotFound) {
 			return status.Errorf(codes.NotFound, "device %q not found", req.GetDeviceId())
 		}
 		return status.Errorf(codes.Internal, "registry get: %v", err)
+	}
+	if err := s.authorize(stream.Context(), auth.OpSubscribe, d); err != nil {
+		return err
 	}
 
 	updates, unsubscribe := s.broker.Subscribe(req.GetDeviceId())
@@ -207,18 +260,22 @@ func (s *DeviceService) Subscribe(req *udalv1.SubscribeRequest, stream udalv1.De
 
 // ─── Command RPC ──────────────────────────────────────────────────────────────
 
-func (s *DeviceService) SendCommand(_ context.Context, req *udalv1.SendCommandRequest) (*udalv1.SendCommandResponse, error) {
+func (s *DeviceService) SendCommand(ctx context.Context, req *udalv1.SendCommandRequest) (*udalv1.SendCommandResponse, error) {
 	if req.GetDeviceId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "device_id is required")
 	}
 	if req.GetCommand() == "" {
 		return nil, status.Error(codes.InvalidArgument, "command is required")
 	}
-	if _, err := s.reg.Get(req.GetDeviceId()); err != nil {
+	d, err := s.reg.Get(req.GetDeviceId())
+	if err != nil {
 		if errors.Is(err, registry.ErrNotFound) {
 			return nil, status.Errorf(codes.NotFound, "device %q not found", req.GetDeviceId())
 		}
 		return nil, status.Errorf(codes.Internal, "registry get: %v", err)
+	}
+	if err := s.authorize(ctx, auth.OpSendCommand, d); err != nil {
+		return nil, err
 	}
 	// Command dispatching is handled by the transport adapter layer.
 	// For now, return Unimplemented so the caller knows routing is pending.

@@ -8,6 +8,7 @@ import (
 
 	udalv1 "github.com/paulefl/udal/code/api/proto/gen/udal/v1"
 	"github.com/paulefl/udal/code/gateway/internal/api"
+	"github.com/paulefl/udal/code/gateway/internal/auth"
 	"github.com/paulefl/udal/code/gateway/internal/registry"
 	"github.com/paulefl/udal/code/gateway/internal/service"
 	"google.golang.org/grpc"
@@ -19,6 +20,14 @@ func newSvc() *service.DeviceService {
 	return service.New(registry.NewMemoryRegistry(), api.NewMemoryPropertyStore(), api.NewBroker())
 }
 
+// adminCtx returns a context carrying an authenticated admin identity —
+// these tests exercise RPC-handler behavior, not RBAC/ACL (see
+// internal/auth's own tests for that), so admin (which the RBAC matrix
+// allows everywhere) keeps them focused on their original concern.
+func adminCtx() context.Context {
+	return auth.ContextWithIdentity(context.Background(), auth.Identity{Subject: "test-admin", Role: auth.RoleAdmin})
+}
+
 func grpcCode(err error) codes.Code {
 	s, _ := status.FromError(err)
 	return s.Code()
@@ -28,7 +37,7 @@ func grpcCode(err error) codes.Code {
 
 func TestRegisterDevice_OK(t *testing.T) {
 	svc := newSvc()
-	resp, err := svc.RegisterDevice(context.Background(), &udalv1.RegisterDeviceRequest{
+	resp, err := svc.RegisterDevice(adminCtx(), &udalv1.RegisterDeviceRequest{
 		Name:       "sensor-1",
 		Capability: "temperature-sensor",
 		Transport:  "mqtt",
@@ -55,7 +64,7 @@ func TestRegisterDevice_MissingFields(t *testing.T) {
 		{"no transport", &udalv1.RegisterDeviceRequest{Name: "n", Capability: "c"}},
 	}
 	for _, tt := range tests {
-		_, err := svc.RegisterDevice(context.Background(), tt.req)
+		_, err := svc.RegisterDevice(adminCtx(), tt.req)
 		if grpcCode(err) != codes.InvalidArgument {
 			t.Errorf("%s: expected InvalidArgument, got %v", tt.name, err)
 		}
@@ -66,10 +75,10 @@ func TestRegisterDevice_MissingFields(t *testing.T) {
 
 func TestGetDevice_OK(t *testing.T) {
 	svc := newSvc()
-	reg, _ := svc.RegisterDevice(context.Background(), &udalv1.RegisterDeviceRequest{
+	reg, _ := svc.RegisterDevice(adminCtx(), &udalv1.RegisterDeviceRequest{
 		Name: "cam", Capability: "ip-camera", Transport: "http",
 	})
-	got, err := svc.GetDevice(context.Background(), &udalv1.GetDeviceRequest{Id: reg.Device.Id})
+	got, err := svc.GetDevice(adminCtx(), &udalv1.GetDeviceRequest{Id: reg.Device.Id})
 	if err != nil {
 		t.Fatalf("GetDevice: %v", err)
 	}
@@ -80,7 +89,7 @@ func TestGetDevice_OK(t *testing.T) {
 
 func TestGetDevice_NotFound(t *testing.T) {
 	svc := newSvc()
-	_, err := svc.GetDevice(context.Background(), &udalv1.GetDeviceRequest{Id: "missing"})
+	_, err := svc.GetDevice(adminCtx(), &udalv1.GetDeviceRequest{Id: "missing"})
 	if grpcCode(err) != codes.NotFound {
 		t.Errorf("expected NotFound, got %v", err)
 	}
@@ -88,7 +97,7 @@ func TestGetDevice_NotFound(t *testing.T) {
 
 func TestGetDevice_EmptyID(t *testing.T) {
 	svc := newSvc()
-	_, err := svc.GetDevice(context.Background(), &udalv1.GetDeviceRequest{})
+	_, err := svc.GetDevice(adminCtx(), &udalv1.GetDeviceRequest{})
 	if grpcCode(err) != codes.InvalidArgument {
 		t.Errorf("expected InvalidArgument, got %v", err)
 	}
@@ -103,19 +112,19 @@ func TestListDevices(t *testing.T) {
 		{"s2", "temperature-sensor", "mqtt"},
 		{"c1", "ip-camera", "http"},
 	} {
-		if _, err := svc.RegisterDevice(context.Background(), &udalv1.RegisterDeviceRequest{
+		if _, err := svc.RegisterDevice(adminCtx(), &udalv1.RegisterDeviceRequest{
 			Name: d.name, Capability: d.cap, Transport: d.tr,
 		}); err != nil {
 			t.Fatalf("RegisterDevice %s: %v", d.name, err)
 		}
 	}
 
-	all, _ := svc.ListDevices(context.Background(), &udalv1.ListDevicesRequest{})
+	all, _ := svc.ListDevices(adminCtx(), &udalv1.ListDevicesRequest{})
 	if len(all.Devices) != 3 {
 		t.Errorf("all: got %d, want 3", len(all.Devices))
 	}
 
-	byCap, _ := svc.ListDevices(context.Background(), &udalv1.ListDevicesRequest{Capability: "temperature-sensor"})
+	byCap, _ := svc.ListDevices(adminCtx(), &udalv1.ListDevicesRequest{Capability: "temperature-sensor"})
 	if len(byCap.Devices) != 2 {
 		t.Errorf("by capability: got %d, want 2", len(byCap.Devices))
 	}
@@ -125,19 +134,19 @@ func TestListDevices(t *testing.T) {
 
 func TestDeleteDevice(t *testing.T) {
 	svc := newSvc()
-	reg, _ := svc.RegisterDevice(context.Background(), &udalv1.RegisterDeviceRequest{
+	reg, _ := svc.RegisterDevice(adminCtx(), &udalv1.RegisterDeviceRequest{
 		Name: "x", Capability: "c", Transport: "mqtt",
 	})
-	if _, err := svc.DeleteDevice(context.Background(), &udalv1.DeleteDeviceRequest{Id: reg.Device.Id}); err != nil {
+	if _, err := svc.DeleteDevice(adminCtx(), &udalv1.DeleteDeviceRequest{Id: reg.Device.Id}); err != nil {
 		t.Fatalf("DeleteDevice: %v", err)
 	}
-	_, err := svc.GetDevice(context.Background(), &udalv1.GetDeviceRequest{Id: reg.Device.Id})
+	_, err := svc.GetDevice(adminCtx(), &udalv1.GetDeviceRequest{Id: reg.Device.Id})
 	if grpcCode(err) != codes.NotFound {
 		t.Errorf("after delete: expected NotFound, got %v", err)
 	}
 
 	// delete non-existent
-	_, err = svc.DeleteDevice(context.Background(), &udalv1.DeleteDeviceRequest{Id: "nope"})
+	_, err = svc.DeleteDevice(adminCtx(), &udalv1.DeleteDeviceRequest{Id: "nope"})
 	if grpcCode(err) != codes.NotFound {
 		t.Errorf("delete missing: expected NotFound, got %v", err)
 	}
@@ -147,12 +156,12 @@ func TestDeleteDevice(t *testing.T) {
 
 func TestSetGetProperty(t *testing.T) {
 	svc := newSvc()
-	reg, _ := svc.RegisterDevice(context.Background(), &udalv1.RegisterDeviceRequest{
+	reg, _ := svc.RegisterDevice(adminCtx(), &udalv1.RegisterDeviceRequest{
 		Name: "sensor", Capability: "temperature-sensor", Transport: "mqtt",
 	})
 	devID := reg.Device.Id
 
-	setResp, err := svc.SetProperty(context.Background(), &udalv1.SetPropertyRequest{
+	setResp, err := svc.SetProperty(adminCtx(), &udalv1.SetPropertyRequest{
 		DeviceId:     devID,
 		PropertyPath: "temperature",
 		Value:        &udalv1.PropertyValue{Value: &udalv1.PropertyValue_FloatVal{FloatVal: 23.5}},
@@ -164,7 +173,7 @@ func TestSetGetProperty(t *testing.T) {
 		t.Errorf("SetProperty response: FloatVal = %v, want 23.5", setResp.NewValue.GetFloatVal())
 	}
 
-	getResp, err := svc.GetProperty(context.Background(), &udalv1.GetPropertyRequest{
+	getResp, err := svc.GetProperty(adminCtx(), &udalv1.GetPropertyRequest{
 		DeviceId: devID, PropertyPath: "temperature",
 	})
 	if err != nil {
@@ -177,7 +186,7 @@ func TestSetGetProperty(t *testing.T) {
 
 func TestGetProperty_DeviceNotFound(t *testing.T) {
 	svc := newSvc()
-	_, err := svc.GetProperty(context.Background(), &udalv1.GetPropertyRequest{
+	_, err := svc.GetProperty(adminCtx(), &udalv1.GetPropertyRequest{
 		DeviceId: "missing", PropertyPath: "temperature",
 	})
 	if grpcCode(err) != codes.NotFound {
@@ -187,10 +196,10 @@ func TestGetProperty_DeviceNotFound(t *testing.T) {
 
 func TestGetProperty_PropertyNotFound(t *testing.T) {
 	svc := newSvc()
-	reg, _ := svc.RegisterDevice(context.Background(), &udalv1.RegisterDeviceRequest{
+	reg, _ := svc.RegisterDevice(adminCtx(), &udalv1.RegisterDeviceRequest{
 		Name: "s", Capability: "temperature-sensor", Transport: "mqtt",
 	})
-	_, err := svc.GetProperty(context.Background(), &udalv1.GetPropertyRequest{
+	_, err := svc.GetProperty(adminCtx(), &udalv1.GetPropertyRequest{
 		DeviceId: reg.Device.Id, PropertyPath: "nonexistent",
 	})
 	if grpcCode(err) != codes.NotFound {
@@ -208,7 +217,7 @@ func TestSetProperty_EmptyArgs(t *testing.T) {
 		{"no property_path", &udalv1.SetPropertyRequest{DeviceId: "d"}},
 	}
 	for _, tt := range tests {
-		_, err := svc.SetProperty(context.Background(), tt.req)
+		_, err := svc.SetProperty(adminCtx(), tt.req)
 		if grpcCode(err) != codes.InvalidArgument {
 			t.Errorf("%s: expected InvalidArgument, got %v", tt.name, err)
 		}
@@ -219,7 +228,7 @@ func TestSetProperty_EmptyArgs(t *testing.T) {
 
 func TestSendCommand_DeviceNotFound(t *testing.T) {
 	svc := newSvc()
-	_, err := svc.SendCommand(context.Background(), &udalv1.SendCommandRequest{
+	_, err := svc.SendCommand(adminCtx(), &udalv1.SendCommandRequest{
 		DeviceId: "missing", Command: "reboot",
 	})
 	if grpcCode(err) != codes.NotFound {
@@ -229,10 +238,10 @@ func TestSendCommand_DeviceNotFound(t *testing.T) {
 
 func TestSendCommand_Unimplemented(t *testing.T) {
 	svc := newSvc()
-	reg, _ := svc.RegisterDevice(context.Background(), &udalv1.RegisterDeviceRequest{
+	reg, _ := svc.RegisterDevice(adminCtx(), &udalv1.RegisterDeviceRequest{
 		Name: "s", Capability: "temperature-sensor", Transport: "mqtt",
 	})
-	_, err := svc.SendCommand(context.Background(), &udalv1.SendCommandRequest{
+	_, err := svc.SendCommand(adminCtx(), &udalv1.SendCommandRequest{
 		DeviceId: reg.Device.Id, Command: "reboot",
 	})
 	if grpcCode(err) != codes.Unimplemented {
@@ -242,11 +251,11 @@ func TestSendCommand_Unimplemented(t *testing.T) {
 
 func TestSendCommand_EmptyArgs(t *testing.T) {
 	svc := newSvc()
-	_, err := svc.SendCommand(context.Background(), &udalv1.SendCommandRequest{Command: "c"})
+	_, err := svc.SendCommand(adminCtx(), &udalv1.SendCommandRequest{Command: "c"})
 	if grpcCode(err) != codes.InvalidArgument {
 		t.Errorf("device_id missing: expected InvalidArgument, got %v", err)
 	}
-	_, err = svc.SendCommand(context.Background(), &udalv1.SendCommandRequest{DeviceId: "d"})
+	_, err = svc.SendCommand(adminCtx(), &udalv1.SendCommandRequest{DeviceId: "d"})
 	if grpcCode(err) != codes.InvalidArgument {
 		t.Errorf("command missing: expected InvalidArgument, got %v", err)
 	}
@@ -283,7 +292,7 @@ func (f *fakeSubscribeStream) sent() []*udalv1.SubscribeResponse {
 
 func TestSubscribe_DeviceNotFound(t *testing.T) {
 	svc := newSvc()
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(adminCtx())
 	defer cancel()
 	err := svc.Subscribe(&udalv1.SubscribeRequest{DeviceId: "missing"}, &fakeSubscribeStream{ctx: ctx})
 	if grpcCode(err) != codes.NotFound {
@@ -293,7 +302,7 @@ func TestSubscribe_DeviceNotFound(t *testing.T) {
 
 func TestSubscribe_EmptyDeviceID(t *testing.T) {
 	svc := newSvc()
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(adminCtx())
 	defer cancel()
 	err := svc.Subscribe(&udalv1.SubscribeRequest{}, &fakeSubscribeStream{ctx: ctx})
 	if grpcCode(err) != codes.InvalidArgument {
@@ -303,14 +312,14 @@ func TestSubscribe_EmptyDeviceID(t *testing.T) {
 
 func TestSubscribe_ReceivesPublishedUpdate(t *testing.T) {
 	svc := newSvc()
-	dev, err := svc.RegisterDevice(context.Background(), &udalv1.RegisterDeviceRequest{
+	dev, err := svc.RegisterDevice(adminCtx(), &udalv1.RegisterDeviceRequest{
 		Name: "s", Capability: "temperature-sensor", Transport: "mqtt",
 	})
 	if err != nil {
 		t.Fatalf("RegisterDevice: %v", err)
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(adminCtx())
 	stream := &fakeSubscribeStream{ctx: ctx}
 
 	done := make(chan error, 1)
@@ -321,7 +330,7 @@ func TestSubscribe_ReceivesPublishedUpdate(t *testing.T) {
 	// Give Subscribe time to register with the broker before publishing.
 	time.Sleep(50 * time.Millisecond)
 
-	_, err = svc.SetProperty(context.Background(), &udalv1.SetPropertyRequest{
+	_, err = svc.SetProperty(adminCtx(), &udalv1.SetPropertyRequest{
 		DeviceId:     dev.GetDevice().GetId(),
 		PropertyPath: "temperature",
 		Value:        &udalv1.PropertyValue{Value: &udalv1.PropertyValue_FloatVal{FloatVal: 21.5}},
@@ -352,14 +361,14 @@ func TestSubscribe_ReceivesPublishedUpdate(t *testing.T) {
 
 func TestSubscribe_FiltersByPropertyPath(t *testing.T) {
 	svc := newSvc()
-	dev, err := svc.RegisterDevice(context.Background(), &udalv1.RegisterDeviceRequest{
+	dev, err := svc.RegisterDevice(adminCtx(), &udalv1.RegisterDeviceRequest{
 		Name: "s", Capability: "temperature-sensor", Transport: "mqtt",
 	})
 	if err != nil {
 		t.Fatalf("RegisterDevice: %v", err)
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(adminCtx())
 	stream := &fakeSubscribeStream{ctx: ctx}
 
 	done := make(chan error, 1)
@@ -368,14 +377,14 @@ func TestSubscribe_FiltersByPropertyPath(t *testing.T) {
 	}()
 	time.Sleep(50 * time.Millisecond)
 
-	if _, err := svc.SetProperty(context.Background(), &udalv1.SetPropertyRequest{
+	if _, err := svc.SetProperty(adminCtx(), &udalv1.SetPropertyRequest{
 		DeviceId:     dev.GetDevice().GetId(),
 		PropertyPath: "temperature",
 		Value:        &udalv1.PropertyValue{Value: &udalv1.PropertyValue_FloatVal{FloatVal: 1}},
 	}); err != nil {
 		t.Fatalf("SetProperty temperature: %v", err)
 	}
-	if _, err := svc.SetProperty(context.Background(), &udalv1.SetPropertyRequest{
+	if _, err := svc.SetProperty(adminCtx(), &udalv1.SetPropertyRequest{
 		DeviceId:     dev.GetDevice().GetId(),
 		PropertyPath: "humidity",
 		Value:        &udalv1.PropertyValue{Value: &udalv1.PropertyValue_FloatVal{FloatVal: 2}},
