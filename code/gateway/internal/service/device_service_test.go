@@ -2,18 +2,21 @@ package service_test
 
 import (
 	"context"
+	"sync"
 	"testing"
+	"time"
 
 	udalv1 "github.com/paulefl/udal/code/api/proto/gen/udal/v1"
 	"github.com/paulefl/udal/code/gateway/internal/api"
 	"github.com/paulefl/udal/code/gateway/internal/registry"
 	"github.com/paulefl/udal/code/gateway/internal/service"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
 func newSvc() *service.DeviceService {
-	return service.New(registry.NewMemoryRegistry(), api.NewMemoryPropertyStore())
+	return service.New(registry.NewMemoryRegistry(), api.NewMemoryPropertyStore(), api.NewBroker())
 }
 
 func grpcCode(err error) codes.Code {
@@ -246,6 +249,154 @@ func TestSendCommand_EmptyArgs(t *testing.T) {
 	_, err = svc.SendCommand(context.Background(), &udalv1.SendCommandRequest{DeviceId: "d"})
 	if grpcCode(err) != codes.InvalidArgument {
 		t.Errorf("command missing: expected InvalidArgument, got %v", err)
+	}
+}
+
+// ─── Subscribe ────────────────────────────────────────────────────────────────
+
+// fakeSubscribeStream implements udalv1.DeviceService_SubscribeServer without a
+// real network connection, embedding a nil grpc.ServerStream since the handler
+// only calls Context() and Send(). Send runs on the Subscribe goroutine while
+// the test reads sent() from the main goroutine, so access is mutex-guarded.
+type fakeSubscribeStream struct {
+	grpc.ServerStream
+	ctx context.Context
+
+	mu   sync.Mutex
+	msgs []*udalv1.SubscribeResponse
+}
+
+func (f *fakeSubscribeStream) Context() context.Context { return f.ctx }
+
+func (f *fakeSubscribeStream) Send(r *udalv1.SubscribeResponse) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.msgs = append(f.msgs, r)
+	return nil
+}
+
+func (f *fakeSubscribeStream) sent() []*udalv1.SubscribeResponse {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]*udalv1.SubscribeResponse(nil), f.msgs...)
+}
+
+func TestSubscribe_DeviceNotFound(t *testing.T) {
+	svc := newSvc()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	err := svc.Subscribe(&udalv1.SubscribeRequest{DeviceId: "missing"}, &fakeSubscribeStream{ctx: ctx})
+	if grpcCode(err) != codes.NotFound {
+		t.Errorf("expected NotFound, got %v", err)
+	}
+}
+
+func TestSubscribe_EmptyDeviceID(t *testing.T) {
+	svc := newSvc()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	err := svc.Subscribe(&udalv1.SubscribeRequest{}, &fakeSubscribeStream{ctx: ctx})
+	if grpcCode(err) != codes.InvalidArgument {
+		t.Errorf("expected InvalidArgument, got %v", err)
+	}
+}
+
+func TestSubscribe_ReceivesPublishedUpdate(t *testing.T) {
+	svc := newSvc()
+	dev, err := svc.RegisterDevice(context.Background(), &udalv1.RegisterDeviceRequest{
+		Name: "s", Capability: "temperature-sensor", Transport: "mqtt",
+	})
+	if err != nil {
+		t.Fatalf("RegisterDevice: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	stream := &fakeSubscribeStream{ctx: ctx}
+
+	done := make(chan error, 1)
+	go func() {
+		done <- svc.Subscribe(&udalv1.SubscribeRequest{DeviceId: dev.GetDevice().GetId()}, stream)
+	}()
+
+	// Give Subscribe time to register with the broker before publishing.
+	time.Sleep(50 * time.Millisecond)
+
+	_, err = svc.SetProperty(context.Background(), &udalv1.SetPropertyRequest{
+		DeviceId:     dev.GetDevice().GetId(),
+		PropertyPath: "temperature",
+		Value:        &udalv1.PropertyValue{Value: &udalv1.PropertyValue_FloatVal{FloatVal: 21.5}},
+	})
+	if err != nil {
+		t.Fatalf("SetProperty: %v", err)
+	}
+
+	deadline := time.After(time.Second)
+	for len(stream.sent()) == 0 {
+		select {
+		case <-deadline:
+			t.Fatal("timed out waiting for Subscribe to receive the update")
+		default:
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+
+	cancel()
+	if err := <-done; err != nil {
+		t.Errorf("Subscribe returned error after cancel: %v", err)
+	}
+
+	if got := stream.sent()[0]; got.GetPropertyPath() != "temperature" || got.GetValue().GetFloatVal() != 21.5 {
+		t.Errorf("unexpected event: %+v", got)
+	}
+}
+
+func TestSubscribe_FiltersByPropertyPath(t *testing.T) {
+	svc := newSvc()
+	dev, err := svc.RegisterDevice(context.Background(), &udalv1.RegisterDeviceRequest{
+		Name: "s", Capability: "temperature-sensor", Transport: "mqtt",
+	})
+	if err != nil {
+		t.Fatalf("RegisterDevice: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	stream := &fakeSubscribeStream{ctx: ctx}
+
+	done := make(chan error, 1)
+	go func() {
+		done <- svc.Subscribe(&udalv1.SubscribeRequest{DeviceId: dev.GetDevice().GetId(), PropertyPath: "humidity"}, stream)
+	}()
+	time.Sleep(50 * time.Millisecond)
+
+	if _, err := svc.SetProperty(context.Background(), &udalv1.SetPropertyRequest{
+		DeviceId:     dev.GetDevice().GetId(),
+		PropertyPath: "temperature",
+		Value:        &udalv1.PropertyValue{Value: &udalv1.PropertyValue_FloatVal{FloatVal: 1}},
+	}); err != nil {
+		t.Fatalf("SetProperty temperature: %v", err)
+	}
+	if _, err := svc.SetProperty(context.Background(), &udalv1.SetPropertyRequest{
+		DeviceId:     dev.GetDevice().GetId(),
+		PropertyPath: "humidity",
+		Value:        &udalv1.PropertyValue{Value: &udalv1.PropertyValue_FloatVal{FloatVal: 2}},
+	}); err != nil {
+		t.Fatalf("SetProperty humidity: %v", err)
+	}
+
+	deadline := time.After(time.Second)
+	for len(stream.sent()) == 0 {
+		select {
+		case <-deadline:
+			t.Fatal("timed out waiting for the filtered update")
+		default:
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+	cancel()
+	<-done
+
+	if got := stream.sent(); len(got) != 1 || got[0].GetPropertyPath() != "humidity" {
+		t.Errorf("expected exactly one humidity event, got %+v", got)
 	}
 }
 
