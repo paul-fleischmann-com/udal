@@ -41,6 +41,11 @@ type Registry interface {
 	Delete(id string) error
 	// UpdateStatus sets the device's status and last-seen timestamp.
 	UpdateStatus(id string, status api.DeviceStatus, lastSeen time.Time) error
+	// UpdateACL replaces the device's ACL entries (F-20). There is no
+	// gRPC/REST endpoint to manage ACLs yet — that's a follow-up issue — but
+	// the storage path needs to exist for Authorize's ACL override to be
+	// testable and usable at all.
+	UpdateACL(id string, acl []api.ACLEntry) error
 }
 
 // MemoryRegistry is a thread-safe in-memory Registry implementation used for tests.
@@ -134,6 +139,18 @@ func (r *MemoryRegistry) UpdateStatus(id string, status api.DeviceStatus, lastSe
 	}
 	d.Status = status
 	d.LastSeen = lastSeen
+	r.devices[id] = d
+	return nil
+}
+
+func (r *MemoryRegistry) UpdateACL(id string, acl []api.ACLEntry) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	d, ok := r.devices[id]
+	if !ok {
+		return fmt.Errorf("%w: %s", ErrNotFound, id)
+	}
+	d.ACL = acl
 	r.devices[id] = d
 	return nil
 }

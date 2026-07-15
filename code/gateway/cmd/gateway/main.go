@@ -129,6 +129,29 @@ func main() {
 			tlsConfig.ClientCAs = caPool
 			if mtlsRequired {
 				tlsConfig.ClientAuth = tls.RequireAndVerifyClientCert
+				// Exempt loopback connections — i.e. the REST gateway's own
+				// internal dial below — from the client-cert requirement.
+				// Without this, that internal hop would need to present some
+				// certificate purely to satisfy the handshake, and whatever
+				// cert it presented would resolve to a RoleDevice identity
+				// (see auth.IdentityFromContext), silently overriding
+				// whatever API-Key/JWT credential the original external
+				// caller actually presented on every single REST request.
+				//
+				// A fresh *tls.Config is built (rather than copying
+				// *tlsConfig by value) because tls.Config embeds a mutex.
+				loopbackExempt := &tls.Config{
+					Certificates: tlsConfig.Certificates,
+					ClientCAs:    tlsConfig.ClientCAs,
+					MinVersion:   tlsConfig.MinVersion,
+					ClientAuth:   tls.NoClientCert,
+				}
+				tlsConfig.GetConfigForClient = func(hello *tls.ClientHelloInfo) (*tls.Config, error) {
+					if isLoopback(hello.Conn.RemoteAddr()) {
+						return loopbackExempt, nil
+					}
+					return nil, nil // nil: caller falls back to the original config
+				}
 			} else {
 				// F-17 "mTLS-optional mode": requests without a client cert
 				// fall through to API-Key/JWT auth instead of failing the
@@ -140,17 +163,11 @@ func main() {
 		// The REST gateway below dials this exact server on loopback, in the same
 		// process — there is no network position for a MITM attacker to occupy, so
 		// skipping hostname verification here is safe even though the cert's SAN
-		// generally won't match the dial target.
-		dialTLSConfig := &tls.Config{InsecureSkipVerify: true} //nolint:gosec // see comment above
-		if mtlsRequired {
-			// When mTLS is required, the TLS handshake itself rejects any
-			// connection without a client cert — including this internal
-			// loopback one. Present the gateway's own server cert as its
-			// client cert for this hop; it must be signed by (or chain to)
-			// UDAL_MTLS_CA_CERT for the handshake to succeed.
-			dialTLSConfig.Certificates = []tls.Certificate{cert}
-		}
-		dialCreds = credentials.NewTLS(dialTLSConfig)
+		// generally won't match the dial target. It never needs to present a
+		// client certificate itself: either mTLS isn't required, mTLS is
+		// optional (no cert is still accepted), or mTLS is required and this
+		// loopback connection is exempted above.
+		dialCreds = credentials.NewTLS(&tls.Config{InsecureSkipVerify: true}) //nolint:gosec // see comment above
 	} else {
 		log.Warn("starting without TLS (UDAL_DEV_INSECURE=true) — do not use in production")
 		dialCreds = insecure.NewCredentials()
@@ -238,4 +255,16 @@ func envOr(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+// isLoopback reports whether addr's host is a loopback address (127.0.0.0/8
+// or ::1) — used to exempt the REST gateway's own internal dial from a
+// required client certificate.
+func isLoopback(addr net.Addr) bool {
+	host, _, err := net.SplitHostPort(addr.String())
+	if err != nil {
+		return false
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }

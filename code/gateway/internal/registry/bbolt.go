@@ -140,3 +140,23 @@ func (r *BboltRegistry) UpdateStatus(id string, status api.DeviceStatus, lastSee
 		return b.Put([]byte(id), newData)
 	})
 }
+
+func (r *BboltRegistry) UpdateACL(id string, acl []api.ACLEntry) error {
+	return r.db.Update(func(tx *bbolt.Tx) error {
+		b := tx.Bucket(devicesBucket)
+		data := b.Get([]byte(id))
+		if data == nil {
+			return fmt.Errorf("%w: %s", ErrNotFound, id)
+		}
+		var d api.Device
+		if err := json.Unmarshal(data, &d); err != nil {
+			return fmt.Errorf("unmarshal device: %w", err)
+		}
+		d.ACL = acl
+		newData, err := json.Marshal(d)
+		if err != nil {
+			return fmt.Errorf("marshal device: %w", err)
+		}
+		return b.Put([]byte(id), newData)
+	})
+}
