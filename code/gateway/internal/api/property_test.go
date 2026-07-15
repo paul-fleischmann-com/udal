@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/paulefl/udal/gateway/internal/api"
+	"github.com/paulefl/udal/code/gateway/internal/api"
 )
 
 func TestMemoryPropertyStore_SetGet(t *testing.T) {

@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- Moved `gateway/`, `api/` (and the future `adapters/`, `sdk/`) under a new top-level
+  `code/` directory, per the updated Repository Structure in `README.adoc`. Go module
+  paths, `buf.yaml`/`buf.gen.yaml`, `go.work`, the Dockerfile, CI path filters/commands,
+  and doc references all updated accordingly.
+
 ### Added
 
 - Persistent, bbolt-backed device registry (`gateway/internal/registry.BboltRegistry`),

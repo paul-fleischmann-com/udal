@@ -4,10 +4,10 @@ import (
 	"context"
 	"testing"
 
-	udalv1 "github.com/paulefl/udal/api/proto/gen/udal/v1"
-	"github.com/paulefl/udal/gateway/internal/api"
-	"github.com/paulefl/udal/gateway/internal/registry"
-	"github.com/paulefl/udal/gateway/internal/service"
+	udalv1 "github.com/paulefl/udal/code/api/proto/gen/udal/v1"
+	"github.com/paulefl/udal/code/gateway/internal/api"
+	"github.com/paulefl/udal/code/gateway/internal/registry"
+	"github.com/paulefl/udal/code/gateway/internal/service"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )

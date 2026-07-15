@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/paulefl/udal/gateway/internal/api"
+	"github.com/paulefl/udal/code/gateway/internal/api"
 	"go.etcd.io/bbolt"
 )
 

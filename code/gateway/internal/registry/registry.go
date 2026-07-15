@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/paulefl/udal/gateway/internal/api"
+	"github.com/paulefl/udal/code/gateway/internal/api"
 )
 
 // ErrNotFound is returned when a device does not exist in the registry.

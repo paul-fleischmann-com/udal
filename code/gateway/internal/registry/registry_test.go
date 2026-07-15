@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/paulefl/udal/gateway/internal/api"
-	"github.com/paulefl/udal/gateway/internal/registry"
+	"github.com/paulefl/udal/code/gateway/internal/api"
+	"github.com/paulefl/udal/code/gateway/internal/registry"
 )
 
 func newDevice(name, capability, transport string) api.Device {

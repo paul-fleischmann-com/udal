@@ -32,34 +32,34 @@ jobs:
         with:
           filters: |
             go:
-              - 'gateway/**'
-              - 'adapters/**'
-              - 'sdk/go/**'
+              - 'code/gateway/**'
+              - 'code/adapters/**'
+              - 'code/sdk/go/**'
               - 'go.mod'
               - 'go.sum'
             rust:
-              - 'sdk/rust/**'
+              - 'code/sdk/rust/**'
               - '**/Cargo.toml'
               - '**/Cargo.lock'
             python:
-              - 'sdk/python/**'
+              - 'code/sdk/python/**'
               - '**/pyproject.toml'
               - '**/requirements*.txt'
             typescript:
-              - 'sdk/typescript/**'
+              - 'code/sdk/typescript/**'
               - '**/package.json'
               - '**/tsconfig.json'
             reflex:
               - 'dashboard/**'
-              - 'sdk/python/**'
+              - 'code/sdk/python/**'
             proto:
-              - 'api/proto/**'
-              - 'api/openapi/**'
+              - 'code/api/proto/**'
+              - 'code/api/openapi/**'
               - 'buf.yaml'
               - 'buf.gen.yaml'
               - 'redocly.yaml'
             docker:
-              - 'gateway/**'
+              - 'code/gateway/**'
               - 'deployments/docker/**'
               - 'Dockerfile'
             architecture:
@@ -81,10 +81,10 @@ jobs:
           cache: true
 
       - name: Build gateway
-        run: go build ./gateway/...
+        run: go build ./code/gateway/...
 
       - name: Unit tests
-        run: go test -race -coverprofile=coverage.out ./gateway/...
+        run: go test -race -coverprofile=coverage.out ./code/gateway/...
 
       - name: Upload coverage
         uses: actions/upload-artifact@v4
@@ -106,7 +106,7 @@ jobs:
       - uses: golangci/golangci-lint-action@v6
         with:
           version: latest
-          args: --timeout=5m ./gateway/...
+          args: --timeout=5m ./code/gateway/...
 
   go-security:
     name: Go — Security (gosec + govulncheck)
@@ -124,14 +124,14 @@ jobs:
         run: go install github.com/securego/gosec/v2/cmd/gosec@latest
 
       - name: Run gosec
-        run: gosec ./gateway/...
+        run: gosec ./code/gateway/...
 
       - name: Install govulncheck
         run: go install golang.org/x/vuln/cmd/govulncheck@latest
 
       - name: Run govulncheck
         run: govulncheck ./...
-        working-directory: gateway
+        working-directory: code/gateway
 
 # ─── Go: Integration Tests (MQTT via Docker) ──────────────────────────────────
   go-integration:
@@ -157,7 +157,7 @@ jobs:
           cache: true
 
       - name: Run integration tests
-        run: go test -v -tags integration -timeout 120s ./gateway/...
+        run: go test -v -tags integration -timeout 120s ./code/gateway/...
         env:
           UDAL_TEST_MQTT_BROKER: tcp://localhost:1883
 
@@ -169,7 +169,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: sdk/rust
+        working-directory: code/sdk/rust
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -178,7 +178,7 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: sdk/rust
+          workspaces: code/sdk/rust
 
       - name: Build
         run: cargo build --all-features
@@ -205,7 +205,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: sdk/python
+        working-directory: code/sdk/python
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -268,14 +268,14 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: sdk/typescript
+        working-directory: code/sdk/typescript
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
           cache: npm
-          cache-dependency-path: sdk/typescript/package-lock.json
+          cache-dependency-path: code/sdk/typescript/package-lock.json
 
       - name: Install dependencies
         run: npm ci
@@ -308,25 +308,25 @@ jobs:
           version: "1.32.0"
 
       - name: Proto lint
-        run: buf lint api/proto
+        run: buf lint code/api/proto
 
       - name: Breaking change check (against main)
         if: github.event_name == 'pull_request'
         run: |
           git fetch origin main --depth=1 2>/dev/null || true
-          if git ls-tree origin/main -- api/proto/ 2>/dev/null | grep -q '\.proto'; then
-            buf breaking api/proto --against "https://github.com/${{ github.repository }}.git#branch=main,subdir=api/proto"
+          if git ls-tree origin/main -- code/api/proto/ 2>/dev/null | grep -q '\.proto'; then
+            buf breaking code/api/proto --against "https://github.com/${{ github.repository }}.git#branch=main,subdir=code/api/proto"
           else
             echo "No proto files on main yet — skipping breaking change check."
           fi
 
       - name: Generate Go stubs (verify compilable)
-        run: buf generate api/proto
+        run: buf generate code/api/proto
 
       - name: Generate OpenAPI v3 spec
         run: |
-          npx --yes swagger2openapi api/openapi/udal/v1/device.swagger.json \
-            --outfile api/openapi/udal/v1/device.openapi.v3.json \
+          npx --yes swagger2openapi code/api/openapi/udal/v1/device.swagger.json \
+            --outfile code/api/openapi/udal/v1/device.openapi.v3.json \
             --patch
 
       - name: Validate OpenAPI v3 spec

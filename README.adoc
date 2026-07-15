@@ -96,19 +96,19 @@ udal/
 |===
 | SDK | Language | Primary Use
 
-| link:sdk/go/[Go SDK]
+| link:code/sdk/go/[Go SDK]
 | Go
 | Device agents, backend services
 
-| link:sdk/rust/[Rust SDK]
+| link:code/sdk/rust/[Rust SDK]
 | Rust
 | Embedded devices, bare-metal, RTOS
 
-| link:sdk/python/[Python SDK]
+| link:code/sdk/python/[Python SDK]
 | Python
 | Prototyping, data science
 
-| link:sdk/typescript/[TypeScript SDK]
+| link:code/sdk/typescript/[TypeScript SDK]
 | TypeScript / Node.js
 | Web frontends, Node.js services
 |===
