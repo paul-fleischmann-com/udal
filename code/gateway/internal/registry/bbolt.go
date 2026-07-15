@@ -36,6 +36,11 @@ func NewBboltRegistry(path string) (*BboltRegistry, error) {
 	return &BboltRegistry{db: db}, nil
 }
 
+// DB returns the underlying bbolt database handle, so other packages (e.g.
+// internal/auth's API-key store) can persist their own data in the same
+// database file without opening a second file.
+func (r *BboltRegistry) DB() *bbolt.DB { return r.db }
+
 // Close closes the underlying database file.
 func (r *BboltRegistry) Close() error {
 	return r.db.Close()
