@@ -64,23 +64,49 @@ func TestList(t *testing.T) {
 	if _, err := r.Register(newDevice("s2", "temperature-sensor", "mqtt")); err != nil {
 		t.Fatalf("Register s2: %v", err)
 	}
-	if _, err := r.Register(newDevice("c1", "ip-camera", "http")); err != nil {
+	c1, err := r.Register(api.Device{Name: "c1", Capability: "ip-camera", Transport: "http", Labels: map[string]string{"site": "hq"}})
+	if err != nil {
 		t.Fatalf("Register c1: %v", err)
 	}
+	if err := r.UpdateStatus(c1.ID, api.DeviceStatusOnline, time.Now()); err != nil {
+		t.Fatalf("UpdateStatus c1: %v", err)
+	}
 
-	all, _ := r.List("", "")
+	all, _ := r.List(registry.ListFilter{})
 	if len(all) != 3 {
 		t.Errorf("List all: got %d, want 3", len(all))
 	}
 
-	mqtt, _ := r.List("temperature-sensor", "")
+	mqtt, _ := r.List(registry.ListFilter{Capability: "temperature-sensor"})
 	if len(mqtt) != 2 {
 		t.Errorf("List temperature-sensor: got %d, want 2", len(mqtt))
 	}
 
-	http, _ := r.List("", "http")
+	http, _ := r.List(registry.ListFilter{Transport: "http"})
 	if len(http) != 1 {
 		t.Errorf("List http transport: got %d, want 1", len(http))
+	}
+
+	tagged, _ := r.List(registry.ListFilter{Tag: "site"})
+	if len(tagged) != 1 || tagged[0].ID != c1.ID {
+		t.Errorf("List tag=site: got %v, want [%s]", tagged, c1.ID)
+	}
+
+	noTag, _ := r.List(registry.ListFilter{Tag: "missing"})
+	if len(noTag) != 0 {
+		t.Errorf("List tag=missing: got %d, want 0", len(noTag))
+	}
+
+	online := true
+	onlineOnly, _ := r.List(registry.ListFilter{Online: &online})
+	if len(onlineOnly) != 1 || onlineOnly[0].ID != c1.ID {
+		t.Errorf("List online=true: got %v, want [%s]", onlineOnly, c1.ID)
+	}
+
+	offline := false
+	offlineOnly, _ := r.List(registry.ListFilter{Online: &offline})
+	if len(offlineOnly) != 2 {
+		t.Errorf("List online=false: got %d, want 2", len(offlineOnly))
 	}
 }
 

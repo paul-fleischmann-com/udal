@@ -26,8 +26,15 @@ func main() {
 
 	grpcAddr := envOr("UDAL_GRPC_ADDR", ":50051")
 	httpAddr := envOr("UDAL_HTTP_ADDR", ":8080")
+	registryPath := envOr("UDAL_REGISTRY_PATH", "./udal-registry.db")
 
-	reg := registry.NewMemoryRegistry()
+	reg, err := registry.NewBboltRegistry(registryPath)
+	if err != nil {
+		log.Error("open device registry", "path", registryPath, "err", err)
+		os.Exit(1)
+	}
+	defer reg.Close()
+
 	props := api.NewMemoryPropertyStore()
 	svc := service.New(reg, props)
 

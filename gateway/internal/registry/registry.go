@@ -15,6 +15,18 @@ var ErrNotFound = fmt.Errorf("device not found")
 // ErrAlreadyExists is returned when registering a device with a duplicate ID.
 var ErrAlreadyExists = fmt.Errorf("device already exists")
 
+// ListFilter narrows down the result of Registry.List. A zero-value field
+// means "no filter" for that dimension. Tag matches against the presence of
+// the given key in a device's Labels, regardless of its value.
+type ListFilter struct {
+	Capability string
+	Transport  string
+	Tag        string
+	// Online filters by connectivity status when non-nil: true keeps only
+	// DeviceStatusOnline devices, false keeps everything else.
+	Online *bool
+}
+
 // Registry stores and retrieves Device records.
 // Implementations must be safe for concurrent use.
 type Registry interface {
@@ -22,9 +34,9 @@ type Registry interface {
 	Register(d api.Device) (api.Device, error)
 	// Get returns the device with the given ID or ErrNotFound.
 	Get(id string) (api.Device, error)
-	// List returns all devices optionally filtered by capability and/or transport.
-	// Empty strings mean "no filter".
-	List(capability, transport string) ([]api.Device, error)
+	// List returns all devices matching filter. A zero-value ListFilter returns
+	// every registered device.
+	List(filter ListFilter) ([]api.Device, error)
 	// Delete removes a device. Returns ErrNotFound if the device does not exist.
 	Delete(id string) error
 	// UpdateStatus sets the device's status and last-seen timestamp.
@@ -72,20 +84,35 @@ func (r *MemoryRegistry) Get(id string) (api.Device, error) {
 	return d, nil
 }
 
-func (r *MemoryRegistry) List(capability, transport string) ([]api.Device, error) {
+func (r *MemoryRegistry) List(filter ListFilter) ([]api.Device, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	out := make([]api.Device, 0, len(r.devices))
 	for _, d := range r.devices {
-		if capability != "" && d.Capability != capability {
-			continue
+		if matchesFilter(d, filter) {
+			out = append(out, d)
 		}
-		if transport != "" && d.Transport != transport {
-			continue
-		}
-		out = append(out, d)
 	}
 	return out, nil
+}
+
+// matchesFilter reports whether d satisfies every non-zero dimension of filter.
+func matchesFilter(d api.Device, filter ListFilter) bool {
+	if filter.Capability != "" && d.Capability != filter.Capability {
+		return false
+	}
+	if filter.Transport != "" && d.Transport != filter.Transport {
+		return false
+	}
+	if filter.Tag != "" {
+		if _, ok := d.Labels[filter.Tag]; !ok {
+			return false
+		}
+	}
+	if filter.Online != nil && (d.Status == api.DeviceStatusOnline) != *filter.Online {
+		return false
+	}
+	return true
 }
 
 func (r *MemoryRegistry) Delete(id string) error {

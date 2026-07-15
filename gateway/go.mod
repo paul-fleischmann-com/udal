@@ -5,6 +5,7 @@ go 1.24.0
 require (
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.20.0
 	github.com/paulefl/udal/api/proto/gen v0.0.0
+	go.etcd.io/bbolt v1.4.3
 	google.golang.org/grpc v1.79.3
 	google.golang.org/protobuf v1.36.10
 )
