@@ -3,6 +3,7 @@ module github.com/paulefl/udal/code/gateway
 go 1.24.0
 
 require (
+	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.20.0
 	github.com/paulefl/udal/code/api/proto/gen v0.0.0
 	go.etcd.io/bbolt v1.4.3
