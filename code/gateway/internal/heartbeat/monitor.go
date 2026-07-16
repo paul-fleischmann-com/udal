@@ -85,14 +85,17 @@ func (m *Monitor) Touch(deviceID string) error {
 // fails.
 func (m *Monitor) Sweep() error {
 	now := m.now()
-	devices, err := m.reg.List(registry.ListFilter{})
+	online := true
+	// Filtering to Online devices at the registry layer (rather than
+	// listing everything and skipping non-Online ones here) matters once
+	// device counts grow (#43's 1,000-device load test) -- every offline
+	// or never-touched device would otherwise still cost a full
+	// unmarshal/compare on every single sweep interval for no reason.
+	devices, err := m.reg.List(registry.ListFilter{Online: &online})
 	if err != nil {
 		return err
 	}
 	for _, d := range devices {
-		if d.Status != api.DeviceStatusOnline {
-			continue
-		}
 		if now.Sub(d.LastSeen) < m.timeout {
 			continue
 		}
