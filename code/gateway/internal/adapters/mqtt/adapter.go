@@ -37,6 +37,8 @@ type Adapter struct {
 	tr         transport
 	subscribed map[string]struct{}
 	waiters    map[string][]chan []byte
+
+	cb *circuitBreaker
 }
 
 // Option configures an Adapter constructed by New.
@@ -64,6 +66,7 @@ func New(brokerURL string, onUpdate OnPropertyUpdate, opts ...Option) *Adapter {
 		log:            slog.Default(),
 		subscribed:     make(map[string]struct{}),
 		waiters:        make(map[string][]chan []byte),
+		cb:             newCircuitBreaker(),
 	}
 	return a
 }
@@ -197,8 +200,23 @@ func (a *Adapter) dispatch(topic string, payload []byte) {
 
 // ReadProperty publishes to .../get and waits for the device's reply on the
 // bare props/{path} topic, honoring ctx's deadline or the adapter's
-// request timeout, whichever elapses first.
+// request timeout, whichever elapses first. Guarded by the circuit breaker
+// (issue #11): returns ErrCircuitOpen without attempting the request after
+// 5 consecutive ReadProperty/WriteProperty failures, for 30s.
 func (a *Adapter) ReadProperty(ctx context.Context, deviceID, path string) (api.PropertyValue, error) {
+	if err := a.cb.allow(); err != nil {
+		return api.PropertyValue{}, err
+	}
+	v, err := a.readProperty(ctx, deviceID, path)
+	if err != nil {
+		a.cb.recordFailure()
+	} else {
+		a.cb.recordSuccess()
+	}
+	return v, err
+}
+
+func (a *Adapter) readProperty(ctx context.Context, deviceID, path string) (api.PropertyValue, error) {
 	a.mu.Lock()
 	tr := a.tr
 	a.mu.Unlock()
@@ -231,8 +249,21 @@ func (a *Adapter) ReadProperty(ctx context.Context, deviceID, path string) (api.
 
 // WriteProperty publishes to .../set and waits for the device's confirmation
 // on .../set/ack, honoring ctx's deadline or the adapter's request timeout,
-// whichever elapses first.
+// whichever elapses first. Guarded by the circuit breaker; see ReadProperty.
 func (a *Adapter) WriteProperty(ctx context.Context, deviceID, path string, v api.PropertyValue) error {
+	if err := a.cb.allow(); err != nil {
+		return err
+	}
+	err := a.writeProperty(ctx, deviceID, path, v)
+	if err != nil {
+		a.cb.recordFailure()
+	} else {
+		a.cb.recordSuccess()
+	}
+	return err
+}
+
+func (a *Adapter) writeProperty(ctx context.Context, deviceID, path string, v api.PropertyValue) error {
 	a.mu.Lock()
 	tr := a.tr
 	a.mu.Unlock()
