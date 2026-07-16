@@ -171,3 +171,30 @@ func TestBboltConcurrentAccess(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+func TestBboltUpdateACL(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "registry.db")
+	r, err := registry.NewBboltRegistry(path)
+	if err != nil {
+		t.Fatalf("NewBboltRegistry: %v", err)
+	}
+	defer r.Close()
+
+	d, err := r.Register(api.Device{Name: "s", Capability: "temperature-sensor", Transport: "mqtt"})
+	if err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	acl := []api.ACLEntry{{Subject: "reader-1", Allow: true}}
+	if err := r.UpdateACL(d.ID, acl); err != nil {
+		t.Fatalf("UpdateACL: %v", err)
+	}
+
+	got, err := r.Get(d.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if len(got.ACL) != 1 || got.ACL[0] != acl[0] {
+		t.Errorf("ACL = %+v, want %+v", got.ACL, acl)
+	}
+}

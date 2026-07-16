@@ -149,3 +149,22 @@ func TestUpdateStatus(t *testing.T) {
 		t.Errorf("expected ErrNotFound, got %v", err)
 	}
 }
+
+func TestUpdateACL(t *testing.T) {
+	r := registry.NewMemoryRegistry()
+	d, _ := r.Register(newDevice("s", "temperature-sensor", "mqtt"))
+
+	acl := []api.ACLEntry{{Subject: "reader-1", Allow: true}}
+	if err := r.UpdateACL(d.ID, acl); err != nil {
+		t.Fatalf("UpdateACL: %v", err)
+	}
+
+	got, _ := r.Get(d.ID)
+	if len(got.ACL) != 1 || got.ACL[0] != acl[0] {
+		t.Errorf("ACL = %+v, want %+v", got.ACL, acl)
+	}
+
+	if err := r.UpdateACL("missing", acl); !errors.Is(err, registry.ErrNotFound) {
+		t.Errorf("expected ErrNotFound, got %v", err)
+	}
+}

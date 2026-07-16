@@ -37,6 +37,15 @@ type Device struct {
 	Status     DeviceStatus
 	LastSeen   time.Time
 	Labels     map[string]string
+	ACL        []ACLEntry
+}
+
+// ACLEntry grants or denies a specific identity (by subject) access to a
+// device, overriding the RBAC role-level decision for that identity on that
+// device (see F-20 / internal/auth.Authorize).
+type ACLEntry struct {
+	Subject string
+	Allow   bool
 }
 
 // PropertyValue is a discriminated union for typed property values.
