@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"flag"
 	"log/slog"
 	"net"
 	"net/http"
@@ -19,6 +20,7 @@ import (
 	mqttadapter "github.com/paulefl/udal/code/gateway/internal/adapters/mqtt"
 	"github.com/paulefl/udal/code/gateway/internal/api"
 	"github.com/paulefl/udal/code/gateway/internal/auth"
+	"github.com/paulefl/udal/code/gateway/internal/config"
 	"github.com/paulefl/udal/code/gateway/internal/registry"
 	"github.com/paulefl/udal/code/gateway/internal/service"
 	"google.golang.org/grpc"
@@ -30,16 +32,37 @@ import (
 func main() {
 	log := slog.New(slog.NewTextHandler(os.Stdout, nil))
 
-	grpcAddr := envOr("UDAL_GRPC_ADDR", ":50051")
-	httpAddr := envOr("UDAL_HTTP_ADDR", ":8080")
-	registryPath := envOr("UDAL_REGISTRY_PATH", "./udal-registry.db")
-	tlsCertPath := os.Getenv("UDAL_TLS_CERT")
-	tlsKeyPath := os.Getenv("UDAL_TLS_KEY")
+	// ─── Config file (F-09/req42.adoc §7.2, issue #41) ────────────────────────
+	// A missing gateway.yaml is not an error — cfg stays zero-value, and every
+	// setting below resolves to exactly its pre-#41 default via
+	// config.ResolveString/ResolveAddr, so existing deployments with no config
+	// file and only the flat UDAL_* env vars are unaffected.
+	configFlag := flag.String("config", "", "path to gateway.yaml (default: $UDAL_CONFIG_PATH or ./gateway.yaml)")
+	flag.Parse()
+	configPath := *configFlag
+	if configPath == "" {
+		configPath = envOr("UDAL_CONFIG_PATH", "gateway.yaml")
+	}
+	cfg, err := config.Load(configPath)
+	if err != nil {
+		log.Error("load config file", "path", configPath, "err", err)
+		os.Exit(1)
+	}
+	if err := cfg.ApplyEnv(); err != nil {
+		log.Error("apply config env overrides", "err", err)
+		os.Exit(1)
+	}
+
+	grpcAddr := config.ResolveAddr(os.Getenv("UDAL_GRPC_ADDR"), cfg.Gateway.GRPCPort, 50051)
+	httpAddr := config.ResolveAddr(os.Getenv("UDAL_HTTP_ADDR"), cfg.Gateway.HTTPPort, 8080)
+	registryPath := config.ResolveString(os.Getenv("UDAL_REGISTRY_PATH"), cfg.Gateway.Registry.Path, "./udal-registry.db")
+	tlsCertPath := config.ResolveString(os.Getenv("UDAL_TLS_CERT"), cfg.Gateway.TLS.Cert, "")
+	tlsKeyPath := config.ResolveString(os.Getenv("UDAL_TLS_KEY"), cfg.Gateway.TLS.Key, "")
 	devInsecure := envOr("UDAL_DEV_INSECURE", "false") == "true"
-	mtlsCACertPath := os.Getenv("UDAL_MTLS_CA_CERT")
+	mtlsCACertPath := config.ResolveString(os.Getenv("UDAL_MTLS_CA_CERT"), cfg.Gateway.TLS.CA, "")
 	mtlsRequired := envOr("UDAL_MTLS_REQUIRED", "false") == "true"
 	bootstrapAPIKey := os.Getenv("UDAL_BOOTSTRAP_API_KEY")
-	jwksURL := os.Getenv("UDAL_JWT_JWKS_URL")
+	jwksURL := config.ResolveString(os.Getenv("UDAL_JWT_JWKS_URL"), cfg.Gateway.Auth.JWKSURL, "")
 	jwtAudience := os.Getenv("UDAL_JWT_AUDIENCE")
 	jwtIssuer := os.Getenv("UDAL_JWT_ISSUER")
 
@@ -62,7 +85,7 @@ func main() {
 
 	// ─── MQTT transport adapter (F-09) ────────────────────────────────────────
 	var mqttAdapter *mqttadapter.Adapter
-	if mqttBroker := os.Getenv("UDAL_MQTT_BROKER"); mqttBroker != "" {
+	if mqttBroker := config.ResolveString(os.Getenv("UDAL_MQTT_BROKER"), cfg.Gateway.Adapters.MQTT.Broker, ""); mqttBroker != "" {
 		mqttAdapter = mqttadapter.New(mqttBroker, func(deviceID, path string, v api.PropertyValue) {
 			broker.Publish(api.PropertyUpdate{DeviceID: deviceID, PropertyPath: path, Value: v, Timestamp: time.Now()})
 		}, mqttadapter.WithLogger(log))

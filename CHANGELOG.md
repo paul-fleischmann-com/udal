@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Optional `gateway.yaml` config file (`gateway/internal/config`, req42.adoc §7.2), path
+  configurable via `--config` or `UDAL_CONFIG_PATH` (default `./gateway.yaml`). A missing
+  file is not an error — the gateway falls back to exactly its previous env-var-only
+  defaults. Every YAML key is overridable by its own `UDAL_*` environment variable
+  (`UDAL_GRPC_PORT`, `UDAL_HTTP_PORT`, `UDAL_METRICS_PORT`, plus the gateway's existing
+  `UDAL_TLS_CERT`/`UDAL_TLS_KEY`/`UDAL_MTLS_CA_CERT`/`UDAL_REGISTRY_PATH`/
+  `UDAL_MQTT_BROKER` for the keys that already had one, so current deployments are
+  unaffected); the pre-existing flat env vars (`UDAL_GRPC_ADDR` etc.) still take priority
+  over the config file if set. `metrics_port`, `auth.api_key_header`,
+  `adapters.mqtt.client_id`, `adapters.http`/`adapters.can`, `heartbeat_interval` and
+  `device_timeout` are parsed and overridable but not yet consumed by any running
+  feature — see `docs/features/plans/41-yaml-config.md` for why. (#41)
 - MQTT transport adapter (`gateway/internal/adapters/mqtt`), the first real transport
   adapter: request/response `ReadProperty`/`WriteProperty` over the topic convention
   `udal/{deviceId}/props/{path}[/get|/set|/set/ack]` (configurable timeout, default 5s),
