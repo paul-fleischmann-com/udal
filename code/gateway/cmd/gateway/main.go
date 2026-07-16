@@ -16,6 +16,7 @@ import (
 
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	udalv1 "github.com/paulefl/udal/code/api/proto/gen/udal/v1"
+	mqttadapter "github.com/paulefl/udal/code/gateway/internal/adapters/mqtt"
 	"github.com/paulefl/udal/code/gateway/internal/api"
 	"github.com/paulefl/udal/code/gateway/internal/auth"
 	"github.com/paulefl/udal/code/gateway/internal/registry"
@@ -58,6 +59,31 @@ func main() {
 	broker := api.NewBroker()
 	commands := api.NewCommandRouter()
 	svc := service.New(reg, props, broker, commands)
+
+	// ─── MQTT transport adapter (F-09) ────────────────────────────────────────
+	var mqttAdapter *mqttadapter.Adapter
+	if mqttBroker := os.Getenv("UDAL_MQTT_BROKER"); mqttBroker != "" {
+		mqttAdapter = mqttadapter.New(mqttBroker, func(deviceID, path string, v api.PropertyValue) {
+			broker.Publish(api.PropertyUpdate{DeviceID: deviceID, PropertyPath: path, Value: v, Timestamp: time.Now()})
+		}, mqttadapter.WithLogger(log))
+		if err := mqttAdapter.Connect(context.Background()); err != nil {
+			log.Error("connect to MQTT broker", "broker", mqttBroker, "err", err)
+			os.Exit(1)
+		}
+		svc.SetMQTTAdapter(mqttAdapter)
+		log.Info("connected to MQTT broker", "broker", mqttBroker)
+
+		mqttDevices, err := reg.List(registry.ListFilter{Transport: "mqtt"})
+		if err != nil {
+			log.Error("list mqtt devices", "err", err)
+			os.Exit(1)
+		}
+		for _, d := range mqttDevices {
+			if err := mqttAdapter.WatchDevice(context.Background(), d.ID); err != nil {
+				log.Warn("watch mqtt device", "device", d.ID, "err", err)
+			}
+		}
+	}
 
 	// ─── Auth (F-16/F-17/F-18/F-19/F-20) ──────────────────────────────────────
 	apiKeys, err := auth.NewAPIKeyStore(reg.DB())
@@ -247,6 +273,11 @@ func main() {
 	defer shutCancel()
 	if err := httpServer.Shutdown(shutCtx); err != nil {
 		log.Error("HTTP shutdown", "err", err)
+	}
+	if mqttAdapter != nil {
+		if err := mqttAdapter.Disconnect(shutCtx); err != nil {
+			log.Error("MQTT disconnect", "err", err)
+		}
 	}
 	log.Info("stopped")
 }

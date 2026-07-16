@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- MQTT transport adapter (`gateway/internal/adapters/mqtt`), the first real transport
+  adapter: request/response `ReadProperty`/`WriteProperty` over the topic convention
+  `udal/{deviceId}/props/{path}[/get|/set|/set/ack]` (configurable timeout, default 5s),
+  unsolicited property publishes fanned out through the existing `Broker` (`Subscribe`
+  RPC), MQTT v5 (via `paho.golang`/`autopaho`, reconnect with exponential backoff 1s-60s)
+  with automatic fallback to v3.1.1 (`paho.mqtt.golang`) if the broker rejects v5's
+  CONNECT specifically over protocol version, and a circuit breaker (5 consecutive
+  errors → open for 30s, then a half-open probe). `DeviceService.GetProperty`/
+  `SetProperty` now branch on `Device.Transport`: `mqtt` devices route through the
+  adapter, everything else keeps using the in-memory `PropertyStore` unchanged.
+  Gateway-side, opt-in via `UDAL_MQTT_BROKER` (unset: no adapter, current behavior for
+  all transports). SendCommand-over-MQTT isn't wired up yet — no acceptance criterion in
+  this ticket required it. (#11)
 - Go SDK (`code/sdk/go`, module `github.com/paulefl/udal/code/sdk/go`): device side
   (`NewDevice`/`Run`/`PublishProperty`/`OnCommand`, auto-reconnect with backoff) and
   application side (`NewClient`/`GetProperty`/`WriteProperty`/`SendCommand`/`Subscribe`),

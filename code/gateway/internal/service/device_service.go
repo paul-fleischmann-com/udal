@@ -10,6 +10,7 @@ import (
 	"time"
 
 	udalv1 "github.com/paulefl/udal/code/api/proto/gen/udal/v1"
+	mqttadapter "github.com/paulefl/udal/code/gateway/internal/adapters/mqtt"
 	"github.com/paulefl/udal/code/gateway/internal/api"
 	"github.com/paulefl/udal/code/gateway/internal/auth"
 	"github.com/paulefl/udal/code/gateway/internal/registry"
@@ -20,18 +21,31 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
+// MQTTAdapter is the subset of *mqttadapter.Adapter's API DeviceService
+// needs to route GetProperty/SetProperty for mqtt-transport devices (issue
+// #11). A narrow interface rather than the concrete type so tests can
+// supply a fake.
+type MQTTAdapter interface {
+	ReadProperty(ctx context.Context, deviceID, path string) (api.PropertyValue, error)
+	WriteProperty(ctx context.Context, deviceID, path string, v api.PropertyValue) error
+	WatchDevice(ctx context.Context, deviceID string) error
+}
+
 // DeviceService implements udalv1.DeviceServiceServer.
-// It delegates device registration to a Registry and property storage to a
-// PropertyStore. SendCommand is routed to a directly-connected gRPC device's
-// StreamCommands channel via commands, if one is open for that device;
-// devices behind a transport adapter aren't wired up yet in v1, so
-// SendCommand returns Unimplemented for those.
+// It delegates device registration to a Registry; property storage goes to
+// a PropertyStore for most devices, or to an MQTTAdapter for devices whose
+// Transport is "mqtt" (if one is configured — see SetMQTTAdapter). SendCommand
+// is routed to a directly-connected gRPC device's StreamCommands channel via
+// commands, if one is open for that device; SendCommand-over-MQTT isn't in
+// this ticket's scope (no acceptance criterion requires it), so it still
+// returns Unimplemented for mqtt-transport devices.
 type DeviceService struct {
 	udalv1.UnimplementedDeviceServiceServer
 	reg      registry.Registry
 	props    api.PropertyStore
 	broker   *api.Broker
 	commands *api.CommandRouter
+	mqtt     MQTTAdapter
 }
 
 // New returns a DeviceService backed by the given Registry, PropertyStore,
@@ -39,6 +53,27 @@ type DeviceService struct {
 // to a connected device's StreamCommands channel).
 func New(reg registry.Registry, props api.PropertyStore, broker *api.Broker, commands *api.CommandRouter) *DeviceService {
 	return &DeviceService{reg: reg, props: props, broker: broker, commands: commands}
+}
+
+// SetMQTTAdapter wires an MQTTAdapter into the service so mqtt-transport
+// devices' GetProperty/SetProperty route through it instead of the
+// in-memory PropertyStore. Optional — a DeviceService without one behaves
+// exactly as before (mqtt-transport devices fall through to PropertyStore,
+// same as any other transport).
+func (s *DeviceService) SetMQTTAdapter(a MQTTAdapter) { s.mqtt = a }
+
+// mqttStatusError maps an MQTTAdapter error to a gRPC status.
+func mqttStatusError(err error) error {
+	switch {
+	case errors.Is(err, mqttadapter.ErrInvalidTopicSegment):
+		return status.Errorf(codes.InvalidArgument, "mqtt: %v", err)
+	case errors.Is(err, mqttadapter.ErrCircuitOpen):
+		return status.Errorf(codes.Unavailable, "mqtt: %v", err)
+	case errors.Is(err, context.DeadlineExceeded):
+		return status.Errorf(codes.DeadlineExceeded, "mqtt: %v", err)
+	default:
+		return status.Errorf(codes.Internal, "mqtt: %v", err)
+	}
 }
 
 // commandTimeout is F-07's "Command timeout (configurable, default 10 s)".
@@ -131,6 +166,18 @@ func (s *DeviceService) RegisterDevice(ctx context.Context, req *udalv1.Register
 		}
 		return nil, status.Errorf(codes.Internal, "registry register: %v", err)
 	}
+	if d.Transport == "mqtt" && s.mqtt != nil {
+		// Best-effort: for most failures, ReadProperty/WriteProperty
+		// subscribe lazily on first access regardless, so a failure here
+		// just delays fan-out for properties nobody's requested yet. The
+		// one failure that doesn't self-heal is an ID containing an MQTT
+		// wildcard character ('+'/'#') — mqttadapter.ErrInvalidTopicSegment
+		// — which also makes every later ReadProperty/WriteProperty for
+		// this device fail the same way, by design (building a topic from
+		// such an ID would turn a per-device subscription into a
+		// broker-wide wildcard).
+		_ = s.mqtt.WatchDevice(ctx, d.ID)
+	}
 	return &udalv1.RegisterDeviceResponse{Device: toProtoDevice(d)}, nil
 }
 
@@ -175,9 +222,18 @@ func (s *DeviceService) GetProperty(ctx context.Context, req *udalv1.GetProperty
 	if err := s.authorize(ctx, auth.OpGetProperty, d); err != nil {
 		return nil, err
 	}
-	v, err := s.props.Get(req.GetDeviceId(), req.GetPropertyPath())
-	if err != nil {
-		return nil, status.Errorf(codes.NotFound, "property %q not found on device %q", req.GetPropertyPath(), req.GetDeviceId())
+
+	var v api.PropertyValue
+	if d.Transport == "mqtt" && s.mqtt != nil {
+		v, err = s.mqtt.ReadProperty(ctx, req.GetDeviceId(), req.GetPropertyPath())
+		if err != nil {
+			return nil, mqttStatusError(err)
+		}
+	} else {
+		v, err = s.props.Get(req.GetDeviceId(), req.GetPropertyPath())
+		if err != nil {
+			return nil, status.Errorf(codes.NotFound, "property %q not found on device %q", req.GetPropertyPath(), req.GetDeviceId())
+		}
 	}
 	pbVal, err := toProtoValue(v)
 	if err != nil {
@@ -204,6 +260,22 @@ func (s *DeviceService) SetProperty(ctx context.Context, req *udalv1.SetProperty
 		return nil, err
 	}
 	v := fromProtoValue(req.GetValue())
+
+	if d.Transport == "mqtt" && s.mqtt != nil {
+		if err := s.mqtt.WriteProperty(ctx, req.GetDeviceId(), req.GetPropertyPath(), v); err != nil {
+			return nil, mqttStatusError(err)
+		}
+		// No broker.Publish here: the device's own props/{path} publish
+		// (echoed after applying the write, or its next heartbeat) drives
+		// Subscribe fan-out for mqtt-transport devices, via the adapter's
+		// OnPropertyUpdate callback wired up in main.go — the /set/ack
+		// this call waited for only confirms receipt, not the device's
+		// authoritative new value.
+		_ = s.reg.UpdateStatus(req.GetDeviceId(), api.DeviceStatusOnline, time.Now())
+		pbVal, _ := toProtoValue(v)
+		return &udalv1.SetPropertyResponse{NewValue: pbVal}, nil
+	}
+
 	if err := s.props.Set(req.GetDeviceId(), req.GetPropertyPath(), v); err != nil {
 		return nil, status.Errorf(codes.Internal, "set property: %v", err)
 	}
