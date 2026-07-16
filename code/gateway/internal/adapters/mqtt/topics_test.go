@@ -1,6 +1,9 @@
 package mqtt
 
-import "testing"
+import (
+	"errors"
+	"testing"
+)
 
 func TestTopicBuilders(t *testing.T) {
 	if got, want := topicProps("dev-1", "temperature"), "udal/dev-1/props/temperature"; got != want {
@@ -41,6 +44,27 @@ func TestParsePropsTopic(t *testing.T) {
 		if ok != c.wantOK || deviceID != c.wantDeviceID || path != c.wantPath {
 			t.Errorf("parsePropsTopic(%q) = (%q, %q, %v), want (%q, %q, %v)",
 				c.topic, deviceID, path, ok, c.wantDeviceID, c.wantPath, c.wantOK)
+		}
+	}
+}
+
+func TestValidTopicSegment(t *testing.T) {
+	// '+'/'#' only act as MQTT wildcards when they make up an entire
+	// "/"-separated topic level on their own — a level like "dev+1" is
+	// just a literal string to a broker, not a wildcard, so it must stay
+	// valid (rejecting it would be stricter than the actual risk and could
+	// reject legitimate device IDs/paths for no security benefit).
+	valid := []string{"dev-1", "temperature", "sensor/temperature", "", "dev+1", "dev-#1", "a+b/c#d"}
+	for _, s := range valid {
+		if err := validTopicSegment(s); err != nil {
+			t.Errorf("validTopicSegment(%q) = %v, want nil", s, err)
+		}
+	}
+
+	invalid := []string{"+", "#", "sensor/+/temperature", "sensor/#", "udal/+/props/#"}
+	for _, s := range invalid {
+		if err := validTopicSegment(s); !errors.Is(err, ErrInvalidTopicSegment) {
+			t.Errorf("validTopicSegment(%q) = %v, want ErrInvalidTopicSegment", s, err)
 		}
 	}
 }

@@ -121,6 +121,9 @@ func (a *Adapter) Disconnect(ctx context.Context) error {
 // gateway never explicitly requested — the "Subscribe: fan-out to Router on
 // incoming property events" acceptance criterion. Idempotent.
 func (a *Adapter) WatchDevice(ctx context.Context, deviceID string) error {
+	if err := validTopicSegment(deviceID); err != nil {
+		return err
+	}
 	return a.subscribeOnce(ctx, topicPropsWildcard(deviceID))
 }
 
@@ -223,6 +226,12 @@ func (a *Adapter) dispatch(topic string, payload []byte) {
 // (issue #11): returns ErrCircuitOpen without attempting the request after
 // 5 consecutive ReadProperty/WriteProperty failures, for 30s.
 func (a *Adapter) ReadProperty(ctx context.Context, deviceID, path string) (api.PropertyValue, error) {
+	if err := validTopicSegment(deviceID); err != nil {
+		return api.PropertyValue{}, err
+	}
+	if err := validTopicSegment(path); err != nil {
+		return api.PropertyValue{}, err
+	}
 	if err := a.cb.allow(); err != nil {
 		return api.PropertyValue{}, err
 	}
@@ -270,6 +279,12 @@ func (a *Adapter) readProperty(ctx context.Context, deviceID, path string) (api.
 // on .../set/ack, honoring ctx's deadline or the adapter's request timeout,
 // whichever elapses first. Guarded by the circuit breaker; see ReadProperty.
 func (a *Adapter) WriteProperty(ctx context.Context, deviceID, path string, v api.PropertyValue) error {
+	if err := validTopicSegment(deviceID); err != nil {
+		return err
+	}
+	if err := validTopicSegment(path); err != nil {
+		return err
+	}
 	if err := a.cb.allow(); err != nil {
 		return err
 	}

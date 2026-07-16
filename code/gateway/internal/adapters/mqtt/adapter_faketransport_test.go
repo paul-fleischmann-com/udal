@@ -121,6 +121,28 @@ func TestAdapter_UnsolicitedDispatchFansOutWithoutAnyRequest(t *testing.T) {
 	}
 }
 
+func TestAdapter_RejectsDeviceIDContainingWildcardLevel(t *testing.T) {
+	// A deviceID (or path) of exactly "+" would turn WatchDevice's
+	// per-device wildcard "udal/{deviceId}/props/#" into "udal/+/props/#",
+	// matching every device on the broker rather than just this one — must
+	// be rejected, not silently subscribed.
+	ft := &respondingTransport{}
+	a := newTestAdapter(nil, ft)
+
+	if err := a.WatchDevice(context.Background(), "+"); !errors.Is(err, ErrInvalidTopicSegment) {
+		t.Errorf("WatchDevice(\"+\") = %v, want ErrInvalidTopicSegment", err)
+	}
+	if _, err := a.ReadProperty(context.Background(), "+", "temperature"); !errors.Is(err, ErrInvalidTopicSegment) {
+		t.Errorf("ReadProperty(deviceID=\"+\") = %v, want ErrInvalidTopicSegment", err)
+	}
+	if _, err := a.ReadProperty(context.Background(), "dev-1", "#"); !errors.Is(err, ErrInvalidTopicSegment) {
+		t.Errorf("ReadProperty(path=\"#\") = %v, want ErrInvalidTopicSegment", err)
+	}
+	if err := a.WriteProperty(context.Background(), "+", "led", api.BoolValue(true)); !errors.Is(err, ErrInvalidTopicSegment) {
+		t.Errorf("WriteProperty(deviceID=\"+\") = %v, want ErrInvalidTopicSegment", err)
+	}
+}
+
 func TestAdapter_CircuitBreakerOpensAfterConsecutiveReadFailures(t *testing.T) {
 	ft := &respondingTransport{publishErr: errors.New("broker unreachable")}
 	a := newTestAdapter(nil, ft, WithRequestTimeout(50*time.Millisecond))

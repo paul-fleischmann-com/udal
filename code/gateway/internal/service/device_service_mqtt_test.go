@@ -162,6 +162,25 @@ func TestGetProperty_MQTTCircuitOpenMapsToUnavailable(t *testing.T) {
 	}
 }
 
+func TestGetProperty_MQTTInvalidTopicSegmentMapsToInvalidArgument(t *testing.T) {
+	// A property_path of "+" would (via the real adapter, not this fake)
+	// turn a per-property subscription into an MQTT wildcard — the caller
+	// gave bad input, so this must surface as InvalidArgument, not
+	// Internal/Unavailable.
+	fake := &fakeMQTTAdapter{readErr: mqttadapter.ErrInvalidTopicSegment}
+	svc := newSvcWithMQTT(fake)
+	reg, _ := svc.RegisterDevice(adminCtx(), &udalv1.RegisterDeviceRequest{
+		Name: "sensor", Capability: "temperature-sensor", Transport: "mqtt",
+	})
+
+	_, err := svc.GetProperty(adminCtx(), &udalv1.GetPropertyRequest{
+		DeviceId: reg.Device.Id, PropertyPath: "+",
+	})
+	if grpcCode(err) != codes.InvalidArgument {
+		t.Errorf("expected InvalidArgument for ErrInvalidTopicSegment, got %v", err)
+	}
+}
+
 func TestGetProperty_MQTTGenericErrorMapsToInternal(t *testing.T) {
 	fake := &fakeMQTTAdapter{readErr: errors.New("some unexpected mqtt failure")}
 	svc := newSvcWithMQTT(fake)

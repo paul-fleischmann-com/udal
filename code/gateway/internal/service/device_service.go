@@ -65,6 +65,8 @@ func (s *DeviceService) SetMQTTAdapter(a MQTTAdapter) { s.mqtt = a }
 // mqttStatusError maps an MQTTAdapter error to a gRPC status.
 func mqttStatusError(err error) error {
 	switch {
+	case errors.Is(err, mqttadapter.ErrInvalidTopicSegment):
+		return status.Errorf(codes.InvalidArgument, "mqtt: %v", err)
 	case errors.Is(err, mqttadapter.ErrCircuitOpen):
 		return status.Errorf(codes.Unavailable, "mqtt: %v", err)
 	case errors.Is(err, context.DeadlineExceeded):
@@ -165,9 +167,15 @@ func (s *DeviceService) RegisterDevice(ctx context.Context, req *udalv1.Register
 		return nil, status.Errorf(codes.Internal, "registry register: %v", err)
 	}
 	if d.Transport == "mqtt" && s.mqtt != nil {
-		// Best-effort: ReadProperty/WriteProperty subscribe lazily on
-		// first access regardless, so a failure here just delays fan-out
-		// for properties nobody's requested yet.
+		// Best-effort: for most failures, ReadProperty/WriteProperty
+		// subscribe lazily on first access regardless, so a failure here
+		// just delays fan-out for properties nobody's requested yet. The
+		// one failure that doesn't self-heal is an ID containing an MQTT
+		// wildcard character ('+'/'#') — mqttadapter.ErrInvalidTopicSegment
+		// — which also makes every later ReadProperty/WriteProperty for
+		// this device fail the same way, by design (building a topic from
+		// such an ID would turn a per-device subscription into a
+		// broker-wide wildcard).
 		_ = s.mqtt.WatchDevice(ctx, d.ID)
 	}
 	return &udalv1.RegisterDeviceResponse{Device: toProtoDevice(d)}, nil

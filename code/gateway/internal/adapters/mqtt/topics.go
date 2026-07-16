@@ -18,9 +18,32 @@
 package mqtt
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 )
+
+// ErrInvalidTopicSegment is returned by ReadProperty/WriteProperty/
+// WatchDevice when deviceID or path contains a "/"-separated level that is
+// exactly "+" or "#" — the two MQTT wildcard characters, which only act as
+// wildcards when they make up an entire topic level on their own (a level
+// like "dev+1" is just a literal string to a broker). Both values are
+// ultimately caller-supplied and otherwise unvalidated
+// (RegisterDeviceRequest.id, GetPropertyRequest.property_path — see
+// device_service.go), yet used verbatim to build topics: a deviceID of
+// "+", for example, would turn the per-device wildcard subscription
+// "udal/{deviceId}/props/#" into "udal/+/props/#", matching every device on
+// the broker rather than just this one.
+var ErrInvalidTopicSegment = errors.New(`mqtt: device ID or property path must not contain a "/"-separated level that is exactly "+" or "#"`)
+
+func validTopicSegment(s string) error {
+	for _, level := range strings.Split(s, "/") {
+		if level == "+" || level == "#" {
+			return ErrInvalidTopicSegment
+		}
+	}
+	return nil
+}
 
 func topicProps(deviceID, path string) string   { return fmt.Sprintf("udal/%s/props/%s", deviceID, path) }
 func topicPropsWildcard(deviceID string) string { return fmt.Sprintf("udal/%s/props/#", deviceID) }
