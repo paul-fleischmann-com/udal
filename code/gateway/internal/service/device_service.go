@@ -294,8 +294,9 @@ func (s *DeviceService) SetProperty(ctx context.Context, req *udalv1.SetProperty
 // ─── Streaming RPC ────────────────────────────────────────────────────────────
 
 // Subscribe streams PropertyUpdate events for a device until the client
-// disconnects. If req.PropertyPath is set, only events for that exact path
-// are forwarded; otherwise every property update for the device is sent.
+// disconnects. If req.PropertyPath is set, only property updates for that
+// exact path are forwarded; device online/offline status events (F-04 /
+// #42) are always forwarded regardless, since they aren't property-scoped.
 func (s *DeviceService) Subscribe(req *udalv1.SubscribeRequest, stream udalv1.DeviceService_SubscribeServer) error {
 	if req.GetDeviceId() == "" {
 		return status.Error(codes.InvalidArgument, "device_id is required")
@@ -323,20 +324,31 @@ func (s *DeviceService) Subscribe(req *udalv1.SubscribeRequest, stream udalv1.De
 			if !ok {
 				return nil
 			}
-			if req.GetPropertyPath() != "" && update.PropertyPath != req.GetPropertyPath() {
-				continue
+			var resp *udalv1.SubscribeResponse
+			if update.Status != nil {
+				// Status events (F-04 / #42) aren't scoped to a property
+				// path — always forwarded, unlike property updates below.
+				resp = &udalv1.SubscribeResponse{
+					DeviceId:  update.DeviceID,
+					Status:    toProtoDeviceStatus(*update.Status),
+					Timestamp: timestamppb.New(update.Timestamp),
+				}
+			} else {
+				if req.GetPropertyPath() != "" && update.PropertyPath != req.GetPropertyPath() {
+					continue
+				}
+				pbVal, err := toProtoValue(update.Value)
+				if err != nil {
+					continue
+				}
+				resp = &udalv1.SubscribeResponse{
+					DeviceId:     update.DeviceID,
+					PropertyPath: update.PropertyPath,
+					Value:        pbVal,
+					Timestamp:    timestamppb.New(update.Timestamp),
+				}
 			}
-			pbVal, err := toProtoValue(update.Value)
-			if err != nil {
-				continue
-			}
-			err = stream.Send(&udalv1.SubscribeResponse{
-				DeviceId:     update.DeviceID,
-				PropertyPath: update.PropertyPath,
-				Value:        pbVal,
-				Timestamp:    timestamppb.New(update.Timestamp),
-			})
-			if err != nil {
+			if err := stream.Send(resp); err != nil {
 				return err
 			}
 		}
@@ -472,19 +484,23 @@ func toProtoDevice(d api.Device) *udalv1.Device {
 		Capability: d.Capability,
 		Transport:  d.Transport,
 		Labels:     d.Labels,
-	}
-	switch d.Status {
-	case api.DeviceStatusOnline:
-		pb.Status = udalv1.DeviceStatus_DEVICE_STATUS_ONLINE
-	case api.DeviceStatusOffline:
-		pb.Status = udalv1.DeviceStatus_DEVICE_STATUS_OFFLINE
-	default:
-		pb.Status = udalv1.DeviceStatus_DEVICE_STATUS_UNKNOWN
+		Status:     toProtoDeviceStatus(d.Status),
 	}
 	if !d.LastSeen.IsZero() {
 		pb.LastSeen = timestamppb.New(d.LastSeen)
 	}
 	return pb
+}
+
+func toProtoDeviceStatus(s api.DeviceStatus) udalv1.DeviceStatus {
+	switch s {
+	case api.DeviceStatusOnline:
+		return udalv1.DeviceStatus_DEVICE_STATUS_ONLINE
+	case api.DeviceStatusOffline:
+		return udalv1.DeviceStatus_DEVICE_STATUS_OFFLINE
+	default:
+		return udalv1.DeviceStatus_DEVICE_STATUS_UNKNOWN
+	}
 }
 
 func toProtoValue(v api.PropertyValue) (*udalv1.PropertyValue, error) {

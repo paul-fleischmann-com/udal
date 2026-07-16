@@ -60,11 +60,16 @@ type PropertyValue struct {
 	JSONVal []byte
 }
 
-// PropertyUpdate is emitted on the Subscribe server-streaming RPC
-// whenever a device property changes.
+// PropertyUpdate is emitted on the Subscribe server-streaming RPC —
+// normally whenever a device property changes, but Status non-nil instead
+// signals a device online/offline transition (F-04 / issue #42), in which
+// case PropertyPath/Value are unset. Reusing this type (rather than adding
+// a second event type/mechanism) lets a device-status change reuse
+// Broker's existing per-device fan-out unchanged.
 type PropertyUpdate struct {
 	DeviceID     string
 	PropertyPath string
 	Value        PropertyValue
 	Timestamp    time.Time
+	Status       *DeviceStatus
 }
