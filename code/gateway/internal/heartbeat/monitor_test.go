@@ -231,3 +231,19 @@ func TestNewMonitor_ZeroValuesUseDefaults(t *testing.T) {
 		t.Errorf("Interval() = %v, want DefaultInterval %v", m.Interval(), heartbeat.DefaultInterval)
 	}
 }
+
+func TestNewMonitor_NegativeIntervalUsesDefault(t *testing.T) {
+	// time.ParseDuration("-5s") succeeds without error, so a malformed
+	// gateway.yaml heartbeat_interval could reach here as a negative
+	// value, not just zero. time.NewTicker panics on <= 0 -- Run must
+	// never be handed one, or it crashes the whole gateway process from
+	// its own goroutine.
+	m := heartbeat.NewMonitor(registry.NewMemoryRegistry(), api.NewBroker(), -5*time.Second, -5*time.Second)
+	if m.Interval() != heartbeat.DefaultInterval {
+		t.Errorf("Interval() = %v, want DefaultInterval %v for a negative input", m.Interval(), heartbeat.DefaultInterval)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	m.Run(ctx) // must not panic
+}

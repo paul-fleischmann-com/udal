@@ -40,13 +40,16 @@ type Monitor struct {
 }
 
 // NewMonitor returns a Monitor that considers a device offline once it's
-// gone interval/timeout-silent. interval/timeout of 0 use
-// DefaultInterval/DefaultTimeout.
+// gone interval/timeout-silent. A non-positive interval/timeout (zero, or
+// negative -- e.g. a "-5s" gateway.yaml value, which time.ParseDuration
+// accepts without error) uses DefaultInterval/DefaultTimeout instead of
+// propagating into time.NewTicker in Run, which panics on a duration <= 0
+// and would otherwise crash the whole gateway process from that goroutine.
 func NewMonitor(reg registry.Registry, broker *api.Broker, interval, timeout time.Duration) *Monitor {
-	if interval == 0 {
+	if interval <= 0 {
 		interval = DefaultInterval
 	}
-	if timeout == 0 {
+	if timeout <= 0 {
 		timeout = DefaultTimeout
 	}
 	return &Monitor{reg: reg, broker: broker, interval: interval, timeout: timeout, now: time.Now}
