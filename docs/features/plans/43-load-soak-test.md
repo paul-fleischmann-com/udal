@@ -81,3 +81,24 @@ Subscribe-Fan-out-Pfad existiert bereits (#8).
 - Neuer, nicht-blockierender CI-Job (`workflow_dispatch`)
 - README/CHANGELOG-Eintrag mit Ausführungsanleitung und Ergebnis des
   Soak-Laufs
+
+## Ergebnis des realen Soak-Laufs (Phase 3)
+
+Ausgeführt mit der exakten AC-Konfiguration gegen einen echten
+Mosquitto-Broker (lokal installiert, siehe #11):
+
+```
+UDAL_LOADTEST_DEVICES=1000 UDAL_LOADTEST_PUBLISH_INTERVAL=10s UDAL_LOADTEST_DURATION=30m
+```
+
+| Messung | Ergebnis | AC-Grenzwert |
+|---|---|---|
+| Heap (`HeapAlloc`) | 11.3 MB | < 500 MB |
+| CPU-Auslastung | 0.4 % (über 30 min Wandzeit, 2 CPUs) | < 70 % |
+| Goroutinen während des Laufs | konstant 2208 (4 Stichproben über 30 min, keine Abweichung) | kein Wachstum |
+| Goroutinen nach vollständigem Teardown | 2 (Baseline vor dem Lauf: 1207) | zurück auf Baseline |
+| Events verarbeitet | alle 1.000 Geräte haben Updates empfangen | alle |
+
+Laufzeit: 1801s (30 min Last + Setup/Teardown). Ergebnis: alle
+Akzeptanzkriterien klar erfüllt, keine Hinweise auf ein Goroutine-Leak
+oder übermäßigen Ressourcenverbrauch.
