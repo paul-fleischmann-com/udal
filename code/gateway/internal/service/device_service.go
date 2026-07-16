@@ -31,6 +31,17 @@ type MQTTAdapter interface {
 	WatchDevice(ctx context.Context, deviceID string) error
 }
 
+// PresenceMonitor is the subset of *heartbeat.Monitor's API DeviceService
+// needs (issue #42): Touch marks a device alive right now. RegisterDevice
+// touches on (re-)registration; StreamCommands touches once on connect and
+// then on every tick of Interval for as long as the stream stays open —
+// treating an open direct-gRPC connection as its own continuous heartbeat,
+// since there's no per-message heartbeat protocol for that transport.
+type PresenceMonitor interface {
+	Touch(deviceID string) error
+	Interval() time.Duration
+}
+
 // DeviceService implements udalv1.DeviceServiceServer.
 // It delegates device registration to a Registry; property storage goes to
 // a PropertyStore for most devices, or to an MQTTAdapter for devices whose
@@ -46,6 +57,7 @@ type DeviceService struct {
 	broker   *api.Broker
 	commands *api.CommandRouter
 	mqtt     MQTTAdapter
+	presence PresenceMonitor
 }
 
 // New returns a DeviceService backed by the given Registry, PropertyStore,
@@ -61,6 +73,12 @@ func New(reg registry.Registry, props api.PropertyStore, broker *api.Broker, com
 // exactly as before (mqtt-transport devices fall through to PropertyStore,
 // same as any other transport).
 func (s *DeviceService) SetMQTTAdapter(a MQTTAdapter) { s.mqtt = a }
+
+// SetPresenceMonitor wires a PresenceMonitor into the service so
+// RegisterDevice and StreamCommands report device liveness to it (issue
+// #42). Optional — without one, neither touches anything (no behavior
+// change from before this feature existed).
+func (s *DeviceService) SetPresenceMonitor(m PresenceMonitor) { s.presence = m }
 
 // mqttStatusError maps an MQTTAdapter error to a gRPC status.
 func mqttStatusError(err error) error {
@@ -177,6 +195,19 @@ func (s *DeviceService) RegisterDevice(ctx context.Context, req *udalv1.Register
 		// such an ID would turn a per-device subscription into a
 		// broker-wide wildcard).
 		_ = s.mqtt.WatchDevice(ctx, d.ID)
+	}
+	if s.presence != nil {
+		// Marks the device online immediately on (re-)registration —
+		// covers "device reconnects -> online=true" (#42 AC3) for the
+		// case of a device re-registering after a gateway/process
+		// restart, without waiting for its next heartbeat. Re-fetch so
+		// the response reflects the just-touched status rather than the
+		// pre-touch snapshot from Register.
+		if err := s.presence.Touch(d.ID); err == nil {
+			if touched, err := s.reg.Get(d.ID); err == nil {
+				d = touched
+			}
+		}
 	}
 	return &udalv1.RegisterDeviceResponse{Device: toProtoDevice(d)}, nil
 }
@@ -430,6 +461,20 @@ func (s *DeviceService) StreamCommands(stream udalv1.DeviceService_StreamCommand
 	commands, unregister := s.commands.Register(deviceID)
 	defer unregister()
 
+	// An open StreamCommands connection is itself a continuous liveness
+	// signal (#42): touch presence now and on every tick thereafter, for
+	// as long as the stream stays open, so a device with no in-flight
+	// commands doesn't get incorrectly timed out. heartbeatTick stays nil
+	// (blocks forever, never selected below) if no PresenceMonitor is
+	// configured.
+	var heartbeatTick <-chan time.Time
+	if s.presence != nil {
+		_ = s.presence.Touch(deviceID)
+		ticker := time.NewTicker(s.presence.Interval())
+		defer ticker.Stop()
+		heartbeatTick = ticker.C
+	}
+
 	recvErr := make(chan error, 1)
 	go func() {
 		for {
@@ -456,6 +501,8 @@ func (s *DeviceService) StreamCommands(stream udalv1.DeviceService_StreamCommand
 				return nil
 			}
 			return err
+		case <-heartbeatTick:
+			_ = s.presence.Touch(deviceID)
 		case cmd, ok := <-commands:
 			if !ok {
 				return nil
