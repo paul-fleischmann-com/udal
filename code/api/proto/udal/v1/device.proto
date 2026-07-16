@@ -98,6 +98,17 @@ service DeviceService {
   rpc Subscribe(SubscribeRequest) returns (stream SubscribeResponse) {
     // WebSocket / SSE via grpc-gateway streaming — no HTTP annotation (streaming not supported by grpc-gateway v2 REST mapping)
   }
+
+  // StreamCommands is opened by a device-side SDK (after RegisterDevice) that
+  // is connected directly over gRPC rather than through a transport adapter.
+  // The target device_id is supplied via the "x-device-id" metadata header
+  // when the stream is opened, not as a per-message field, since this is a
+  // bidirectional stream: the server pushes Command as SendCommand calls come
+  // in for that device, and the device sends back one CommandResult per
+  // Command it received. SendCommand routes to this channel when a device is
+  // connected this way, falling back to the (not yet implemented) transport
+  // adapter path otherwise.
+  rpc StreamCommands(stream CommandResult) returns (stream Command) {}
 }
 
 // ─── Request / Response messages ─────────────────────────────────────────────
@@ -159,4 +170,20 @@ message SubscribeResponse {
   string                    property_path = 2;
   PropertyValue             value         = 3;
   google.protobuf.Timestamp timestamp     = 4;
+}
+
+// Command is one command dispatched to a device via StreamCommands, in
+// response to an application calling SendCommand for that device.
+message Command {
+  string                 id     = 1;  // correlates with CommandResult.id
+  string                 name   = 2;
+  google.protobuf.Struct params = 3;
+}
+
+// CommandResult is a device's response to one Command it received.
+message CommandResult {
+  string                 id      = 1;
+  bool                   success = 2;
+  string                 error   = 3;  // populated iff !success
+  google.protobuf.Value  result  = 4;
 }

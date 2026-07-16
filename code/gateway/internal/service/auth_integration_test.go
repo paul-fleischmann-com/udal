@@ -100,7 +100,7 @@ func authTestServer(t *testing.T) (dial func(t *testing.T) *grpc.ClientConn, ca 
 	serverCert := ca.issue(t, "localhost")
 
 	reg = registry.NewMemoryRegistry()
-	svc := service.New(reg, api.NewMemoryPropertyStore(), api.NewBroker())
+	svc := service.New(reg, api.NewMemoryPropertyStore(), api.NewBroker(), api.NewCommandRouter())
 
 	keyDB, err := bbolt.Open(filepath.Join(t.TempDir(), "keys.db"), 0o600, nil)
 	if err != nil {

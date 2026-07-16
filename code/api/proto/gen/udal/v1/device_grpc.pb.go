@@ -27,6 +27,7 @@ const (
 	DeviceService_SetProperty_FullMethodName    = "/udal.v1.DeviceService/SetProperty"
 	DeviceService_SendCommand_FullMethodName    = "/udal.v1.DeviceService/SendCommand"
 	DeviceService_Subscribe_FullMethodName      = "/udal.v1.DeviceService/Subscribe"
+	DeviceService_StreamCommands_FullMethodName = "/udal.v1.DeviceService/StreamCommands"
 )
 
 // DeviceServiceClient is the client API for DeviceService service.
@@ -45,6 +46,16 @@ type DeviceServiceClient interface {
 	SendCommand(ctx context.Context, in *SendCommandRequest, opts ...grpc.CallOption) (*SendCommandResponse, error)
 	// Streaming
 	Subscribe(ctx context.Context, in *SubscribeRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[SubscribeResponse], error)
+	// StreamCommands is opened by a device-side SDK (after RegisterDevice) that
+	// is connected directly over gRPC rather than through a transport adapter.
+	// The target device_id is supplied via the "x-device-id" metadata header
+	// when the stream is opened, not as a per-message field, since this is a
+	// bidirectional stream: the server pushes Command as SendCommand calls come
+	// in for that device, and the device sends back one CommandResult per
+	// Command it received. SendCommand routes to this channel when a device is
+	// connected this way, falling back to the (not yet implemented) transport
+	// adapter path otherwise.
+	StreamCommands(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[CommandResult, Command], error)
 }
 
 type deviceServiceClient struct {
@@ -144,6 +155,19 @@ func (c *deviceServiceClient) Subscribe(ctx context.Context, in *SubscribeReques
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type DeviceService_SubscribeClient = grpc.ServerStreamingClient[SubscribeResponse]
 
+func (c *deviceServiceClient) StreamCommands(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[CommandResult, Command], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &DeviceService_ServiceDesc.Streams[1], DeviceService_StreamCommands_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[CommandResult, Command]{ClientStream: stream}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type DeviceService_StreamCommandsClient = grpc.BidiStreamingClient[CommandResult, Command]
+
 // DeviceServiceServer is the server API for DeviceService service.
 // All implementations must embed UnimplementedDeviceServiceServer
 // for forward compatibility.
@@ -160,6 +184,16 @@ type DeviceServiceServer interface {
 	SendCommand(context.Context, *SendCommandRequest) (*SendCommandResponse, error)
 	// Streaming
 	Subscribe(*SubscribeRequest, grpc.ServerStreamingServer[SubscribeResponse]) error
+	// StreamCommands is opened by a device-side SDK (after RegisterDevice) that
+	// is connected directly over gRPC rather than through a transport adapter.
+	// The target device_id is supplied via the "x-device-id" metadata header
+	// when the stream is opened, not as a per-message field, since this is a
+	// bidirectional stream: the server pushes Command as SendCommand calls come
+	// in for that device, and the device sends back one CommandResult per
+	// Command it received. SendCommand routes to this channel when a device is
+	// connected this way, falling back to the (not yet implemented) transport
+	// adapter path otherwise.
+	StreamCommands(grpc.BidiStreamingServer[CommandResult, Command]) error
 	mustEmbedUnimplementedDeviceServiceServer()
 }
 
@@ -193,6 +227,9 @@ func (UnimplementedDeviceServiceServer) SendCommand(context.Context, *SendComman
 }
 func (UnimplementedDeviceServiceServer) Subscribe(*SubscribeRequest, grpc.ServerStreamingServer[SubscribeResponse]) error {
 	return status.Error(codes.Unimplemented, "method Subscribe not implemented")
+}
+func (UnimplementedDeviceServiceServer) StreamCommands(grpc.BidiStreamingServer[CommandResult, Command]) error {
+	return status.Error(codes.Unimplemented, "method StreamCommands not implemented")
 }
 func (UnimplementedDeviceServiceServer) mustEmbedUnimplementedDeviceServiceServer() {}
 func (UnimplementedDeviceServiceServer) testEmbeddedByValue()                       {}
@@ -352,6 +389,13 @@ func _DeviceService_Subscribe_Handler(srv interface{}, stream grpc.ServerStream)
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type DeviceService_SubscribeServer = grpc.ServerStreamingServer[SubscribeResponse]
 
+func _DeviceService_StreamCommands_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(DeviceServiceServer).StreamCommands(&grpc.GenericServerStream[CommandResult, Command]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type DeviceService_StreamCommandsServer = grpc.BidiStreamingServer[CommandResult, Command]
+
 // DeviceService_ServiceDesc is the grpc.ServiceDesc for DeviceService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -393,6 +437,12 @@ var DeviceService_ServiceDesc = grpc.ServiceDesc{
 			StreamName:    "Subscribe",
 			Handler:       _DeviceService_Subscribe_Handler,
 			ServerStreams: true,
+		},
+		{
+			StreamName:    "StreamCommands",
+			Handler:       _DeviceService_StreamCommands_Handler,
+			ServerStreams: true,
+			ClientStreams: true,
 		},
 	},
 	Metadata: "udal/v1/device.proto",

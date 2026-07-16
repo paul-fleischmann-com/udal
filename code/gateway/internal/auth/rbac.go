@@ -43,6 +43,11 @@ const (
 	OpSetProperty    Operation = "SetProperty"
 	OpSendCommand    Operation = "SendCommand"
 	OpSubscribe      Operation = "Subscribe"
+	// OpStreamCommands isn't in F-19's table either (it's an implementation
+	// detail of how a directly-connected gRPC device receives commands, see
+	// the #12 plan doc); treated the same as SendCommand/SetProperty — a
+	// device may only open its own command stream.
+	OpStreamCommands Operation = "StreamCommands"
 )
 
 // permission describes what a caller in a given role may do for an
@@ -68,6 +73,7 @@ var rbac = map[Operation]map[Role]permission{
 	OpSetProperty:    {RoleAdmin: allow, RoleOperator: allow, RoleReader: deny, RoleDevice: ownOnly},
 	OpSendCommand:    {RoleAdmin: allow, RoleOperator: allow, RoleReader: deny, RoleDevice: ownOnly},
 	OpSubscribe:      {RoleAdmin: allow, RoleOperator: allow, RoleReader: allow, RoleDevice: ownOnly},
+	OpStreamCommands: {RoleAdmin: allow, RoleOperator: allow, RoleReader: deny, RoleDevice: ownOnly},
 }
 
 // Authorize decides whether id may perform op against the device identified

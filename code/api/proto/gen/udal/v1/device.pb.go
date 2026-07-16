@@ -1152,6 +1152,137 @@ func (x *SubscribeResponse) GetTimestamp() *timestamppb.Timestamp {
 	return nil
 }
 
+// Command is one command dispatched to a device via StreamCommands, in
+// response to an application calling SendCommand for that device.
+type Command struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"` // correlates with CommandResult.id
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Params        *structpb.Struct       `protobuf:"bytes,3,opt,name=params,proto3" json:"params,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Command) Reset() {
+	*x = Command{}
+	mi := &file_udal_v1_device_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Command) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Command) ProtoMessage() {}
+
+func (x *Command) ProtoReflect() protoreflect.Message {
+	mi := &file_udal_v1_device_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Command.ProtoReflect.Descriptor instead.
+func (*Command) Descriptor() ([]byte, []int) {
+	return file_udal_v1_device_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *Command) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *Command) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *Command) GetParams() *structpb.Struct {
+	if x != nil {
+		return x.Params
+	}
+	return nil
+}
+
+// CommandResult is a device's response to one Command it received.
+type CommandResult struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Success       bool                   `protobuf:"varint,2,opt,name=success,proto3" json:"success,omitempty"`
+	Error         string                 `protobuf:"bytes,3,opt,name=error,proto3" json:"error,omitempty"` // populated iff !success
+	Result        *structpb.Value        `protobuf:"bytes,4,opt,name=result,proto3" json:"result,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CommandResult) Reset() {
+	*x = CommandResult{}
+	mi := &file_udal_v1_device_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CommandResult) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CommandResult) ProtoMessage() {}
+
+func (x *CommandResult) ProtoReflect() protoreflect.Message {
+	mi := &file_udal_v1_device_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CommandResult.ProtoReflect.Descriptor instead.
+func (*CommandResult) Descriptor() ([]byte, []int) {
+	return file_udal_v1_device_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *CommandResult) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *CommandResult) GetSuccess() bool {
+	if x != nil {
+		return x.Success
+	}
+	return false
+}
+
+func (x *CommandResult) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
+func (x *CommandResult) GetResult() *structpb.Value {
+	if x != nil {
+		return x.Result
+	}
+	return nil
+}
+
 var File_udal_v1_device_proto protoreflect.FileDescriptor
 
 const file_udal_v1_device_proto_rawDesc = "" +
@@ -1234,12 +1365,21 @@ const file_udal_v1_device_proto_rawDesc = "" +
 	"\tdevice_id\x18\x01 \x01(\tR\bdeviceId\x12#\n" +
 	"\rproperty_path\x18\x02 \x01(\tR\fpropertyPath\x12,\n" +
 	"\x05value\x18\x03 \x01(\v2\x16.udal.v1.PropertyValueR\x05value\x128\n" +
-	"\ttimestamp\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\ttimestamp*}\n" +
+	"\ttimestamp\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\ttimestamp\"^\n" +
+	"\aCommand\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12/\n" +
+	"\x06params\x18\x03 \x01(\v2\x17.google.protobuf.StructR\x06params\"\x7f\n" +
+	"\rCommandResult\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x18\n" +
+	"\asuccess\x18\x02 \x01(\bR\asuccess\x12\x14\n" +
+	"\x05error\x18\x03 \x01(\tR\x05error\x12.\n" +
+	"\x06result\x18\x04 \x01(\v2\x16.google.protobuf.ValueR\x06result*}\n" +
 	"\fDeviceStatus\x12\x1d\n" +
 	"\x19DEVICE_STATUS_UNSPECIFIED\x10\x00\x12\x18\n" +
 	"\x14DEVICE_STATUS_ONLINE\x10\x01\x12\x19\n" +
 	"\x15DEVICE_STATUS_OFFLINE\x10\x02\x12\x19\n" +
-	"\x15DEVICE_STATUS_UNKNOWN\x10\x032\x88\a\n" +
+	"\x15DEVICE_STATUS_UNKNOWN\x10\x032\xca\a\n" +
 	"\rDeviceService\x12\\\n" +
 	"\tGetDevice\x12\x19.udal.v1.GetDeviceRequest\x1a\x1a.udal.v1.GetDeviceResponse\"\x18\x82\xd3\xe4\x93\x02\x12\x12\x10/v1/devices/{id}\x12]\n" +
 	"\vListDevices\x12\x1b.udal.v1.ListDevicesRequest\x1a\x1c.udal.v1.ListDevicesResponse\"\x13\x82\xd3\xe4\x93\x02\r\x12\v/v1/devices\x12i\n" +
@@ -1248,7 +1388,8 @@ const file_udal_v1_device_proto_rawDesc = "" +
 	"\vGetProperty\x12\x1b.udal.v1.GetPropertyRequest\x1a\x1c.udal.v1.GetPropertyResponse\"=\x82\xd3\xe4\x93\x027\x125/v1/devices/{device_id}/properties/{property_path=**}\x12\x8e\x01\n" +
 	"\vSetProperty\x12\x1b.udal.v1.SetPropertyRequest\x1a\x1c.udal.v1.SetPropertyResponse\"D\x82\xd3\xe4\x93\x02>:\x05value\x1a5/v1/devices/{device_id}/properties/{property_path=**}\x12\x84\x01\n" +
 	"\vSendCommand\x12\x1b.udal.v1.SendCommandRequest\x1a\x1c.udal.v1.SendCommandResponse\":\x82\xd3\xe4\x93\x024:\x06params\"*/v1/devices/{device_id}/commands/{command}\x12F\n" +
-	"\tSubscribe\x12\x19.udal.v1.SubscribeRequest\x1a\x1a.udal.v1.SubscribeResponse\"\x000\x01B\x92\x01\n" +
+	"\tSubscribe\x12\x19.udal.v1.SubscribeRequest\x1a\x1a.udal.v1.SubscribeResponse\"\x000\x01\x12@\n" +
+	"\x0eStreamCommands\x12\x16.udal.v1.CommandResult\x1a\x10.udal.v1.Command\"\x00(\x010\x01B\x92\x01\n" +
 	"\vcom.udal.v1B\vDeviceProtoP\x01Z9github.com/paulefl/udal/code/api/proto/gen/udal/v1;udalv1\xa2\x02\x03UXX\xaa\x02\aUdal.V1\xca\x02\aUdal\\V1\xe2\x02\x13Udal\\V1\\GPBMetadata\xea\x02\bUdal::V1b\x06proto3"
 
 var (
@@ -1264,7 +1405,7 @@ func file_udal_v1_device_proto_rawDescGZIP() []byte {
 }
 
 var file_udal_v1_device_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_udal_v1_device_proto_msgTypes = make([]protoimpl.MessageInfo, 20)
+var file_udal_v1_device_proto_msgTypes = make([]protoimpl.MessageInfo, 22)
 var file_udal_v1_device_proto_goTypes = []any{
 	(DeviceStatus)(0),              // 0: udal.v1.DeviceStatus
 	(*Device)(nil),                 // 1: udal.v1.Device
@@ -1285,50 +1426,56 @@ var file_udal_v1_device_proto_goTypes = []any{
 	(*SendCommandResponse)(nil),    // 16: udal.v1.SendCommandResponse
 	(*SubscribeRequest)(nil),       // 17: udal.v1.SubscribeRequest
 	(*SubscribeResponse)(nil),      // 18: udal.v1.SubscribeResponse
-	nil,                            // 19: udal.v1.Device.LabelsEntry
-	nil,                            // 20: udal.v1.RegisterDeviceRequest.LabelsEntry
-	(*timestamppb.Timestamp)(nil),  // 21: google.protobuf.Timestamp
-	(*structpb.Value)(nil),         // 22: google.protobuf.Value
-	(*structpb.Struct)(nil),        // 23: google.protobuf.Struct
+	(*Command)(nil),                // 19: udal.v1.Command
+	(*CommandResult)(nil),          // 20: udal.v1.CommandResult
+	nil,                            // 21: udal.v1.Device.LabelsEntry
+	nil,                            // 22: udal.v1.RegisterDeviceRequest.LabelsEntry
+	(*timestamppb.Timestamp)(nil),  // 23: google.protobuf.Timestamp
+	(*structpb.Value)(nil),         // 24: google.protobuf.Value
+	(*structpb.Struct)(nil),        // 25: google.protobuf.Struct
 }
 var file_udal_v1_device_proto_depIdxs = []int32{
 	0,  // 0: udal.v1.Device.status:type_name -> udal.v1.DeviceStatus
-	21, // 1: udal.v1.Device.last_seen:type_name -> google.protobuf.Timestamp
-	19, // 2: udal.v1.Device.labels:type_name -> udal.v1.Device.LabelsEntry
-	22, // 3: udal.v1.PropertyValue.json_val:type_name -> google.protobuf.Value
+	23, // 1: udal.v1.Device.last_seen:type_name -> google.protobuf.Timestamp
+	21, // 2: udal.v1.Device.labels:type_name -> udal.v1.Device.LabelsEntry
+	24, // 3: udal.v1.PropertyValue.json_val:type_name -> google.protobuf.Value
 	1,  // 4: udal.v1.GetDeviceResponse.device:type_name -> udal.v1.Device
 	1,  // 5: udal.v1.ListDevicesResponse.devices:type_name -> udal.v1.Device
-	20, // 6: udal.v1.RegisterDeviceRequest.labels:type_name -> udal.v1.RegisterDeviceRequest.LabelsEntry
-	23, // 7: udal.v1.RegisterDeviceRequest.transport_config:type_name -> google.protobuf.Struct
+	22, // 6: udal.v1.RegisterDeviceRequest.labels:type_name -> udal.v1.RegisterDeviceRequest.LabelsEntry
+	25, // 7: udal.v1.RegisterDeviceRequest.transport_config:type_name -> google.protobuf.Struct
 	1,  // 8: udal.v1.RegisterDeviceResponse.device:type_name -> udal.v1.Device
 	2,  // 9: udal.v1.GetPropertyResponse.value:type_name -> udal.v1.PropertyValue
 	2,  // 10: udal.v1.SetPropertyRequest.value:type_name -> udal.v1.PropertyValue
 	2,  // 11: udal.v1.SetPropertyResponse.new_value:type_name -> udal.v1.PropertyValue
-	23, // 12: udal.v1.SendCommandRequest.params:type_name -> google.protobuf.Struct
-	22, // 13: udal.v1.SendCommandResponse.result:type_name -> google.protobuf.Value
+	25, // 12: udal.v1.SendCommandRequest.params:type_name -> google.protobuf.Struct
+	24, // 13: udal.v1.SendCommandResponse.result:type_name -> google.protobuf.Value
 	2,  // 14: udal.v1.SubscribeResponse.value:type_name -> udal.v1.PropertyValue
-	21, // 15: udal.v1.SubscribeResponse.timestamp:type_name -> google.protobuf.Timestamp
-	3,  // 16: udal.v1.DeviceService.GetDevice:input_type -> udal.v1.GetDeviceRequest
-	5,  // 17: udal.v1.DeviceService.ListDevices:input_type -> udal.v1.ListDevicesRequest
-	7,  // 18: udal.v1.DeviceService.RegisterDevice:input_type -> udal.v1.RegisterDeviceRequest
-	9,  // 19: udal.v1.DeviceService.DeleteDevice:input_type -> udal.v1.DeleteDeviceRequest
-	11, // 20: udal.v1.DeviceService.GetProperty:input_type -> udal.v1.GetPropertyRequest
-	13, // 21: udal.v1.DeviceService.SetProperty:input_type -> udal.v1.SetPropertyRequest
-	15, // 22: udal.v1.DeviceService.SendCommand:input_type -> udal.v1.SendCommandRequest
-	17, // 23: udal.v1.DeviceService.Subscribe:input_type -> udal.v1.SubscribeRequest
-	4,  // 24: udal.v1.DeviceService.GetDevice:output_type -> udal.v1.GetDeviceResponse
-	6,  // 25: udal.v1.DeviceService.ListDevices:output_type -> udal.v1.ListDevicesResponse
-	8,  // 26: udal.v1.DeviceService.RegisterDevice:output_type -> udal.v1.RegisterDeviceResponse
-	10, // 27: udal.v1.DeviceService.DeleteDevice:output_type -> udal.v1.DeleteDeviceResponse
-	12, // 28: udal.v1.DeviceService.GetProperty:output_type -> udal.v1.GetPropertyResponse
-	14, // 29: udal.v1.DeviceService.SetProperty:output_type -> udal.v1.SetPropertyResponse
-	16, // 30: udal.v1.DeviceService.SendCommand:output_type -> udal.v1.SendCommandResponse
-	18, // 31: udal.v1.DeviceService.Subscribe:output_type -> udal.v1.SubscribeResponse
-	24, // [24:32] is the sub-list for method output_type
-	16, // [16:24] is the sub-list for method input_type
-	16, // [16:16] is the sub-list for extension type_name
-	16, // [16:16] is the sub-list for extension extendee
-	0,  // [0:16] is the sub-list for field type_name
+	23, // 15: udal.v1.SubscribeResponse.timestamp:type_name -> google.protobuf.Timestamp
+	25, // 16: udal.v1.Command.params:type_name -> google.protobuf.Struct
+	24, // 17: udal.v1.CommandResult.result:type_name -> google.protobuf.Value
+	3,  // 18: udal.v1.DeviceService.GetDevice:input_type -> udal.v1.GetDeviceRequest
+	5,  // 19: udal.v1.DeviceService.ListDevices:input_type -> udal.v1.ListDevicesRequest
+	7,  // 20: udal.v1.DeviceService.RegisterDevice:input_type -> udal.v1.RegisterDeviceRequest
+	9,  // 21: udal.v1.DeviceService.DeleteDevice:input_type -> udal.v1.DeleteDeviceRequest
+	11, // 22: udal.v1.DeviceService.GetProperty:input_type -> udal.v1.GetPropertyRequest
+	13, // 23: udal.v1.DeviceService.SetProperty:input_type -> udal.v1.SetPropertyRequest
+	15, // 24: udal.v1.DeviceService.SendCommand:input_type -> udal.v1.SendCommandRequest
+	17, // 25: udal.v1.DeviceService.Subscribe:input_type -> udal.v1.SubscribeRequest
+	20, // 26: udal.v1.DeviceService.StreamCommands:input_type -> udal.v1.CommandResult
+	4,  // 27: udal.v1.DeviceService.GetDevice:output_type -> udal.v1.GetDeviceResponse
+	6,  // 28: udal.v1.DeviceService.ListDevices:output_type -> udal.v1.ListDevicesResponse
+	8,  // 29: udal.v1.DeviceService.RegisterDevice:output_type -> udal.v1.RegisterDeviceResponse
+	10, // 30: udal.v1.DeviceService.DeleteDevice:output_type -> udal.v1.DeleteDeviceResponse
+	12, // 31: udal.v1.DeviceService.GetProperty:output_type -> udal.v1.GetPropertyResponse
+	14, // 32: udal.v1.DeviceService.SetProperty:output_type -> udal.v1.SetPropertyResponse
+	16, // 33: udal.v1.DeviceService.SendCommand:output_type -> udal.v1.SendCommandResponse
+	18, // 34: udal.v1.DeviceService.Subscribe:output_type -> udal.v1.SubscribeResponse
+	19, // 35: udal.v1.DeviceService.StreamCommands:output_type -> udal.v1.Command
+	27, // [27:36] is the sub-list for method output_type
+	18, // [18:27] is the sub-list for method input_type
+	18, // [18:18] is the sub-list for extension type_name
+	18, // [18:18] is the sub-list for extension extendee
+	0,  // [0:18] is the sub-list for field type_name
 }
 
 func init() { file_udal_v1_device_proto_init() }
@@ -1350,7 +1497,7 @@ func file_udal_v1_device_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_udal_v1_device_proto_rawDesc), len(file_udal_v1_device_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   20,
+			NumMessages:   22,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

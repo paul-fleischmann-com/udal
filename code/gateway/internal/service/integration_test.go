@@ -73,7 +73,7 @@ func TestGatewayTLS_RegisterReadSubscribe(t *testing.T) {
 	reg := registry.NewMemoryRegistry()
 	props := api.NewMemoryPropertyStore()
 	broker := api.NewBroker()
-	svc := service.New(reg, props, broker)
+	svc := service.New(reg, props, broker, api.NewCommandRouter())
 
 	keyDB, err := bbolt.Open(filepath.Join(t.TempDir(), "keys.db"), 0o600, nil)
 	if err != nil {

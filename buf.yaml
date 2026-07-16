@@ -11,7 +11,11 @@ lint:
   use:
     - DEFAULT
   except:
-    - FIELD_NOT_REQUIRED   # we use proto3 optional semantics via oneof
+    - FIELD_NOT_REQUIRED         # we use proto3 optional semantics via oneof
+    - RPC_REQUEST_STANDARD_NAME  # StreamCommands is bidi: its stream types are
+    - RPC_RESPONSE_STANDARD_NAME # named for what they carry (CommandResult from
+                                  # the device, Command from the server), not
+                                  # "StreamCommandsRequest/Response"
 
 breaking:
   use:
