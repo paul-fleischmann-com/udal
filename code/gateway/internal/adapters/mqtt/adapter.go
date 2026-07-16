@@ -39,6 +39,14 @@ type Adapter struct {
 	waiters    map[string][]chan []byte
 
 	cb *circuitBreaker
+
+	// connectV5/connectV3 default to the real connectV5/connectV3 funcs;
+	// overridable (unexported, same-package tests only) so the "fall back
+	// to v3.1.1 on a v5-unsupported broker" decision in Connect can be unit
+	// tested with a fake — no real v3.1.1-only broker is available to
+	// trigger this path against actual infra (see plan doc).
+	connectV5 connectFunc
+	connectV3 connectFunc
 }
 
 // Option configures an Adapter constructed by New.
@@ -67,16 +75,24 @@ func New(brokerURL string, onUpdate OnPropertyUpdate, opts ...Option) *Adapter {
 		subscribed:     make(map[string]struct{}),
 		waiters:        make(map[string][]chan []byte),
 		cb:             newCircuitBreaker(),
+		connectV5:      connectV5,
+		connectV3:      connectV3,
 	}
 	return a
 }
 
 // Connect dials the broker, negotiating MQTT v5 first. Reconnection with
-// exponential backoff (1s-60s) is handled internally by the v5 transport
-// (autopaho) for the remaining lifetime of the connection; v3.1.1 fallback
-// is added in a later phase.
+// exponential backoff (1s-60s) is handled internally by whichever transport
+// connects (autopaho for v5, paho.mqtt.golang's AutoReconnect for v3.1.1)
+// for the remaining lifetime of the connection. If the broker rejects v5
+// specifically over protocol version, Connect falls back to v3.1.1
+// automatically (issue #11: "MQTT v5 and v3.1.1 supported (auto-negotiate)").
 func (a *Adapter) Connect(ctx context.Context) error {
-	tr, err := connectV5(ctx, a.brokerURL, a.dispatch)
+	tr, err := a.connectV5(ctx, a.brokerURL, a.dispatch)
+	if errors.Is(err, errUnsupportedVersion) {
+		a.log.Info("mqtt: broker rejected v5, falling back to v3.1.1", "broker", a.brokerURL)
+		tr, err = a.connectV3(ctx, a.brokerURL, a.dispatch)
+	}
 	if err != nil {
 		return fmt.Errorf("mqtt: connect %s: %w", a.brokerURL, err)
 	}

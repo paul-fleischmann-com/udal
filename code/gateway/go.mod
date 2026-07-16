@@ -3,6 +3,7 @@ module github.com/paulefl/udal/code/gateway
 go 1.24.0
 
 require (
+	github.com/eclipse/paho.mqtt.golang v1.5.1
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.20.0
 	github.com/paulefl/udal/code/api/proto/gen v0.0.0
@@ -11,6 +12,8 @@ require (
 	google.golang.org/grpc v1.79.3
 	google.golang.org/protobuf v1.36.10
 )
+
+require golang.org/x/sync v0.19.0 // indirect
 
 require (
 	github.com/eclipse/paho.golang v0.23.0
