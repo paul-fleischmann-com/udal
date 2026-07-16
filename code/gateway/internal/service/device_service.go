@@ -466,13 +466,18 @@ func (s *DeviceService) StreamCommands(stream udalv1.DeviceService_StreamCommand
 	// as long as the stream stays open, so a device with no in-flight
 	// commands doesn't get incorrectly timed out. heartbeatTick stays nil
 	// (blocks forever, never selected below) if no PresenceMonitor is
-	// configured.
+	// configured, or if one is but reports a non-positive interval --
+	// time.NewTicker panics on <= 0, and a single misbehaving
+	// PresenceMonitor implementation shouldn't be able to crash every
+	// connected device's StreamCommands handler.
 	var heartbeatTick <-chan time.Time
 	if s.presence != nil {
 		_ = s.presence.Touch(deviceID)
-		ticker := time.NewTicker(s.presence.Interval())
-		defer ticker.Stop()
-		heartbeatTick = ticker.C
+		if interval := s.presence.Interval(); interval > 0 {
+			ticker := time.NewTicker(interval)
+			defer ticker.Stop()
+			heartbeatTick = ticker.C
+		}
 	}
 
 	recvErr := make(chan error, 1)

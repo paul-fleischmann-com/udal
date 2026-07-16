@@ -180,3 +180,32 @@ func TestStreamCommands_NoPresenceMonitorConfiguredIsFine(t *testing.T) {
 		t.Errorf("StreamCommands returned error after cancel: %v", err)
 	}
 }
+
+func TestStreamCommands_ZeroIntervalPresenceMonitorDoesNotPanic(t *testing.T) {
+	// time.NewTicker panics on a non-positive duration -- a misbehaving
+	// PresenceMonitor.Interval() implementation must not be able to crash
+	// every connected device's StreamCommands handler.
+	fake := &fakePresenceMonitor{interval: 0}
+	svc := service.New(registry.NewMemoryRegistry(), api.NewMemoryPropertyStore(), api.NewBroker(), api.NewCommandRouter())
+	svc.SetPresenceMonitor(fake)
+
+	reg, err := svc.RegisterDevice(adminCtx(), &udalv1.RegisterDeviceRequest{
+		Name: "s", Capability: "temperature-sensor", Transport: "mqtt",
+	})
+	if err != nil {
+		t.Fatalf("RegisterDevice: %v", err)
+	}
+	deviceID := reg.GetDevice().GetId()
+
+	ctx, cancel := context.WithCancel(adminCtx())
+	ctx = metadata.NewIncomingContext(ctx, metadata.Pairs("x-device-id", deviceID))
+	stream := &fakeStreamCommandsStream{ctx: ctx, sendCh: make(chan *udalv1.Command, 1), recvCh: make(chan *udalv1.CommandResult, 1)}
+
+	done := make(chan error, 1)
+	go func() { done <- svc.StreamCommands(stream) }() // must not panic
+	time.Sleep(50 * time.Millisecond)
+	cancel()
+	if err := <-done; err != nil {
+		t.Errorf("StreamCommands returned error after cancel: %v", err)
+	}
+}
