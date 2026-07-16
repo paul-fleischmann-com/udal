@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Go SDK (`code/sdk/go`, module `github.com/paulefl/udal/code/sdk/go`): device side
+  (`NewDevice`/`Run`/`PublishProperty`/`OnCommand`, auto-reconnect with backoff) and
+  application side (`NewClient`/`GetProperty`/`WriteProperty`/`SendCommand`/`Subscribe`),
+  per req42.adoc §7.3. (#12)
+- `StreamCommands` gRPC (bidi streaming): lets a directly gRPC-connected device (no
+  transport adapter) receive commands dispatched via `SendCommand`, routed through a new
+  `CommandRouter` (`gateway/internal/api`). (#12)
+- `RegisterDeviceRequest.id` (optional): a device can now register with a caller-chosen,
+  stable ID instead of always getting a server-generated one. (#12)
 - Auth middleware for the gRPC/REST API: API-Key (`X-API-Key`, bcrypt-hashed,
   `UDAL_BOOTSTRAP_API_KEY` for initial provisioning), mTLS client certificates
   (`UDAL_MTLS_CA_CERT`/`UDAL_MTLS_REQUIRED`, CN becomes a device identity), and OAuth2
