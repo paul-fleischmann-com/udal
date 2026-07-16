@@ -78,6 +78,9 @@ func New(brokerURL string, onUpdate OnPropertyUpdate, opts ...Option) *Adapter {
 		connectV5:      connectV5,
 		connectV3:      connectV3,
 	}
+	for _, opt := range opts {
+		opt(a)
+	}
 	return a
 }
 
