@@ -75,6 +75,26 @@ func TestRegisterDevice_MissingFields(t *testing.T) {
 	}
 }
 
+func TestRegisterDevice_CustomID(t *testing.T) {
+	svc := newSvc()
+	resp, err := svc.RegisterDevice(adminCtx(), &udalv1.RegisterDeviceRequest{
+		Id: "sensor-01", Name: "sensor", Capability: "temperature-sensor", Transport: "mqtt",
+	})
+	if err != nil {
+		t.Fatalf("RegisterDevice: %v", err)
+	}
+	if resp.GetDevice().GetId() != "sensor-01" {
+		t.Errorf("Id = %q, want %q", resp.GetDevice().GetId(), "sensor-01")
+	}
+
+	_, err = svc.RegisterDevice(adminCtx(), &udalv1.RegisterDeviceRequest{
+		Id: "sensor-01", Name: "sensor-again", Capability: "temperature-sensor", Transport: "mqtt",
+	})
+	if grpcCode(err) != codes.AlreadyExists {
+		t.Errorf("duplicate custom id: expected AlreadyExists, got %v", err)
+	}
+}
+
 // ─── GetDevice ────────────────────────────────────────────────────────────────
 
 func TestGetDevice_OK(t *testing.T) {

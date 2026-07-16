@@ -119,6 +119,7 @@ func (s *DeviceService) RegisterDevice(ctx context.Context, req *udalv1.Register
 		return nil, err
 	}
 	d, err := s.reg.Register(api.Device{
+		ID:         req.GetId(),
 		Name:       req.GetName(),
 		Capability: req.GetCapability(),
 		Transport:  req.GetTransport(),

@@ -534,8 +534,12 @@ type RegisterDeviceRequest struct {
 	Labels     map[string]string      `protobuf:"bytes,4,rep,name=labels,proto3" json:"labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	// Transport-specific connection parameters (e.g. MQTT topic prefix, HTTP base URL).
 	TransportConfig *structpb.Struct `protobuf:"bytes,5,opt,name=transport_config,json=transportConfig,proto3" json:"transport_config,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// Optional caller-chosen device ID, so a device can keep a stable identity
+	// across restarts instead of getting a new server-generated one each time.
+	// Empty means auto-generate, same as before this field existed.
+	Id            string `protobuf:"bytes,6,opt,name=id,proto3" json:"id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *RegisterDeviceRequest) Reset() {
@@ -601,6 +605,13 @@ func (x *RegisterDeviceRequest) GetTransportConfig() *structpb.Struct {
 		return x.TransportConfig
 	}
 	return nil
+}
+
+func (x *RegisterDeviceRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
 }
 
 type RegisterDeviceResponse struct {
@@ -1324,7 +1335,7 @@ const file_udal_v1_device_proto_rawDesc = "" +
 	"page_token\x18\x04 \x01(\tR\tpageToken\"h\n" +
 	"\x13ListDevicesResponse\x12)\n" +
 	"\adevices\x18\x01 \x03(\v2\x0f.udal.v1.DeviceR\adevices\x12&\n" +
-	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"\xac\x02\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"\xbc\x02\n" +
 	"\x15RegisterDeviceRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1e\n" +
 	"\n" +
@@ -1332,7 +1343,8 @@ const file_udal_v1_device_proto_rawDesc = "" +
 	"capability\x12\x1c\n" +
 	"\ttransport\x18\x03 \x01(\tR\ttransport\x12B\n" +
 	"\x06labels\x18\x04 \x03(\v2*.udal.v1.RegisterDeviceRequest.LabelsEntryR\x06labels\x12B\n" +
-	"\x10transport_config\x18\x05 \x01(\v2\x17.google.protobuf.StructR\x0ftransportConfig\x1a9\n" +
+	"\x10transport_config\x18\x05 \x01(\v2\x17.google.protobuf.StructR\x0ftransportConfig\x12\x0e\n" +
+	"\x02id\x18\x06 \x01(\tR\x02id\x1a9\n" +
 	"\vLabelsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"A\n" +
