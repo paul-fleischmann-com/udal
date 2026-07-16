@@ -446,6 +446,10 @@
         "transportConfig": {
           "type": "object",
           "description": "Transport-specific connection parameters (e.g. MQTT topic prefix, HTTP base URL)."
+        },
+        "id": {
+          "type": "string",
+          "description": "Optional caller-chosen device ID, so a device can keep a stable identity\nacross restarts instead of getting a new server-generated one each time.\nEmpty means auto-generate, same as before this field existed."
         }
       }
     },

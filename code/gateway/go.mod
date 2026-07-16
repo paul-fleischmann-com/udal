@@ -13,6 +13,7 @@ require (
 )
 
 require (
+	github.com/paulefl/udal/code/sdk/go v0.0.0
 	golang.org/x/net v0.49.0 // indirect
 	golang.org/x/sys v0.41.0 // indirect
 	golang.org/x/text v0.34.0 // indirect
@@ -21,3 +22,5 @@ require (
 )
 
 replace github.com/paulefl/udal/code/api/proto/gen => ../api/proto/gen
+
+replace github.com/paulefl/udal/code/sdk/go => ../sdk/go

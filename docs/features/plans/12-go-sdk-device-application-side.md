@@ -38,6 +38,15 @@ Regression für zukünftige adapter-basierte Devices (#11/#24/#25).
   Tag-Pushen ist außerhalb des Scopes dieses Tickets.
 - **RBAC für `StreamCommands`**: nicht in F-19s Matrix — analog zu `SendCommand`
   behandelt (admin/operator/device-own erlaubt, reader verboten).
+- **API-Key-Identitäten haben kein `DeviceID`** (`auth.APIKeyStore.Authenticate`
+  liefert nur `Subject`+`Role`). Das bedeutet: eine per API-Key authentifizierte
+  `RoleDevice`-Identität kann *nie* eine "own device"-Prüfung bestehen, da
+  `Identity.DeviceID` dabei immer leer ist — `RoleDevice` ist faktisch nur über
+  mTLS erreichbar. Im Integrationstest (`sdk_integration_test.go`) läuft das
+  Device daher bewusst über mTLS (Cert-CN = eigene Device-ID) und der
+  Application-Client über API-Key — deckt beide Auth-Methoden ab, ohne diese
+  Lücke zu berühren. Kein Fix in diesem Ticket (wäre ein separates Feature:
+  "Device-scoped API keys"), nur dokumentiert.
 
 ## Phasen
 
