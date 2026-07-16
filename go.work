@@ -3,4 +3,5 @@ go 1.24.0
 use (
 	./code/api/proto/gen
 	./code/gateway
+	./code/sdk/go
 )

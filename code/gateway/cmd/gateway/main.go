@@ -56,7 +56,8 @@ func main() {
 
 	props := api.NewMemoryPropertyStore()
 	broker := api.NewBroker()
-	svc := service.New(reg, props, broker)
+	commands := api.NewCommandRouter()
+	svc := service.New(reg, props, broker, commands)
 
 	// ─── Auth (F-16/F-17/F-18/F-19/F-20) ──────────────────────────────────────
 	apiKeys, err := auth.NewAPIKeyStore(reg.DB())

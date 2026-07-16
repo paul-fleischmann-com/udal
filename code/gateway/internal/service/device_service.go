@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"time"
 
 	udalv1 "github.com/paulefl/udal/code/api/proto/gen/udal/v1"
@@ -13,26 +14,37 @@ import (
 	"github.com/paulefl/udal/code/gateway/internal/auth"
 	"github.com/paulefl/udal/code/gateway/internal/registry"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // DeviceService implements udalv1.DeviceServiceServer.
 // It delegates device registration to a Registry and property storage to a
-// PropertyStore. Command dispatching is forwarded to transport adapters
-// (not yet wired in v1 — SendCommand returns Unimplemented).
+// PropertyStore. SendCommand is routed to a directly-connected gRPC device's
+// StreamCommands channel via commands, if one is open for that device;
+// devices behind a transport adapter aren't wired up yet in v1, so
+// SendCommand returns Unimplemented for those.
 type DeviceService struct {
 	udalv1.UnimplementedDeviceServiceServer
-	reg    registry.Registry
-	props  api.PropertyStore
-	broker *api.Broker
+	reg      registry.Registry
+	props    api.PropertyStore
+	broker   *api.Broker
+	commands *api.CommandRouter
 }
 
 // New returns a DeviceService backed by the given Registry, PropertyStore,
-// and Broker (used to fan out Subscribe events).
-func New(reg registry.Registry, props api.PropertyStore, broker *api.Broker) *DeviceService {
-	return &DeviceService{reg: reg, props: props, broker: broker}
+// Broker (fans out Subscribe events), and CommandRouter (routes SendCommand
+// to a connected device's StreamCommands channel).
+func New(reg registry.Registry, props api.PropertyStore, broker *api.Broker, commands *api.CommandRouter) *DeviceService {
+	return &DeviceService{reg: reg, props: props, broker: broker, commands: commands}
 }
+
+// commandTimeout is F-07's "Command timeout (configurable, default 10 s)".
+// Not yet wired to gateway config (#41 YAML config isn't done); hardcoded
+// default for now.
+const commandTimeout = 10 * time.Second
 
 // ─── Authorization helpers ────────────────────────────────────────────────────
 
@@ -107,6 +119,7 @@ func (s *DeviceService) RegisterDevice(ctx context.Context, req *udalv1.Register
 		return nil, err
 	}
 	d, err := s.reg.Register(api.Device{
+		ID:         req.GetId(),
 		Name:       req.GetName(),
 		Capability: req.GetCapability(),
 		Transport:  req.GetTransport(),
@@ -277,10 +290,105 @@ func (s *DeviceService) SendCommand(ctx context.Context, req *udalv1.SendCommand
 	if err := s.authorize(ctx, auth.OpSendCommand, d); err != nil {
 		return nil, err
 	}
-	// Command dispatching is handled by the transport adapter layer.
-	// For now, return Unimplemented so the caller knows routing is pending.
-	return nil, status.Errorf(codes.Unimplemented,
-		"command %q for device %q: transport adapter not yet connected", req.GetCommand(), req.GetDeviceId())
+
+	params := req.GetParams().AsMap()
+	cmd := api.Command{ID: api.NewCommandID(), Name: req.GetCommand(), Params: params}
+
+	dctx, cancel := context.WithTimeout(ctx, commandTimeout)
+	defer cancel()
+	result, err := s.commands.Dispatch(dctx, req.GetDeviceId(), cmd)
+	switch {
+	case errors.Is(err, api.ErrDeviceNotConnected):
+		// Devices behind a transport adapter aren't wired up yet in v1.
+		return nil, status.Errorf(codes.Unimplemented,
+			"command %q for device %q: transport adapter not yet connected", req.GetCommand(), req.GetDeviceId())
+	case errors.Is(err, context.DeadlineExceeded):
+		return nil, status.Errorf(codes.DeadlineExceeded, "command %q on device %q timed out", req.GetCommand(), req.GetDeviceId())
+	case err != nil:
+		return nil, status.Errorf(codes.Internal, "dispatch command: %v", err)
+	}
+	if !result.Success {
+		return nil, status.Errorf(codes.FailedPrecondition, "device %q rejected command %q: %s", req.GetDeviceId(), req.GetCommand(), result.Error)
+	}
+
+	resultValue, err := structpb.NewValue(result.Result)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "encode command result: %v", err)
+	}
+	return &udalv1.SendCommandResponse{Result: resultValue}, nil
+}
+
+// StreamCommands is opened by a device-side SDK connected directly over
+// gRPC. It registers a command channel for the device named by the
+// "x-device-id" metadata header, forwards each Command sent to it via
+// SendCommand, and submits the device's CommandResult replies back to the
+// CommandRouter for correlation.
+func (s *DeviceService) StreamCommands(stream udalv1.DeviceService_StreamCommandsServer) error {
+	ctx := stream.Context()
+	md, _ := metadata.FromIncomingContext(ctx)
+	deviceIDs := md.Get("x-device-id")
+	if len(deviceIDs) == 0 || deviceIDs[0] == "" {
+		return status.Error(codes.InvalidArgument, "x-device-id metadata is required")
+	}
+	deviceID := deviceIDs[0]
+
+	d, err := s.reg.Get(deviceID)
+	if err != nil {
+		if errors.Is(err, registry.ErrNotFound) {
+			return status.Errorf(codes.NotFound, "device %q not found", deviceID)
+		}
+		return status.Errorf(codes.Internal, "registry get: %v", err)
+	}
+	if err := s.authorize(ctx, auth.OpStreamCommands, d); err != nil {
+		return err
+	}
+
+	commands, unregister := s.commands.Register(deviceID)
+	defer unregister()
+
+	recvErr := make(chan error, 1)
+	go func() {
+		for {
+			res, err := stream.Recv()
+			if err != nil {
+				recvErr <- err
+				return
+			}
+			s.commands.SubmitResult(api.CommandResult{
+				ID:      res.GetId(),
+				Success: res.GetSuccess(),
+				Error:   res.GetError(),
+				Result:  res.GetResult().AsInterface(),
+			})
+		}
+	}()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case err := <-recvErr:
+			if errors.Is(err, io.EOF) {
+				return nil
+			}
+			return err
+		case cmd, ok := <-commands:
+			if !ok {
+				return nil
+			}
+			pbParams, err := structpb.NewStruct(cmd.Params)
+			if err != nil {
+				// Malformed params shouldn't happen (they came from a
+				// well-typed google.protobuf.Struct originally) but don't
+				// take down the whole stream over one bad command.
+				s.commands.SubmitResult(api.CommandResult{ID: cmd.ID, Success: false, Error: fmt.Sprintf("encode params: %v", err)})
+				continue
+			}
+			if err := stream.Send(&udalv1.Command{Id: cmd.ID, Name: cmd.Name, Params: pbParams}); err != nil {
+				return err
+			}
+		}
+	}
 }
 
 // ─── Mapping helpers ──────────────────────────────────────────────────────────

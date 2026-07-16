@@ -72,6 +72,12 @@ func TestRBACMatrix(t *testing.T) {
 		{auth.RoleReader, auth.OpSubscribe, "dev-1", "", true},
 		{auth.RoleDevice, auth.OpSubscribe, "dev-1", "dev-1", true},
 		{auth.RoleDevice, auth.OpSubscribe, "dev-1", "dev-2", false},
+
+		// StreamCommands: same shape as SendCommand.
+		{auth.RoleAdmin, auth.OpStreamCommands, "dev-1", "", true},
+		{auth.RoleReader, auth.OpStreamCommands, "dev-1", "", false},
+		{auth.RoleDevice, auth.OpStreamCommands, "dev-1", "dev-1", true},
+		{auth.RoleDevice, auth.OpStreamCommands, "dev-1", "dev-2", false},
 	}
 
 	for _, tt := range tests {
