@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Heartbeat-based device online/offline detection (F-04): a device silent for
+  longer than `device_timeout` (default 90s) is automatically marked offline, and
+  a `SubscribeResponse.status` event (new, additive proto field) is fanned out
+  through the existing `Broker`/`Subscribe` mechanism on every online/offline
+  transition. Two heartbeat sources feed it: MQTT devices' `udal/{deviceId}/status`
+  topic (documented since #11, now actually consumed), and an open `StreamCommands`
+  connection for direct-gRPC devices, treated as a continuous implicit heartbeat
+  since that transport has no separate heartbeat message. `RegisterDevice` also
+  touches presence immediately, so a device re-registering after a restart is
+  online right away rather than waiting for its first heartbeat. Interval/timeout
+  come from `gateway.heartbeat_interval`/`device_timeout` (#41), defaulting to
+  30s/90s. (#42)
 - Optional `gateway.yaml` config file (`gateway/internal/config`, req42.adoc §7.2), path
   configurable via `--config` or `UDAL_CONFIG_PATH` (default `./gateway.yaml`). A missing
   file is not an error — the gateway falls back to exactly its previous env-var-only

@@ -31,6 +31,17 @@ type MQTTAdapter interface {
 	WatchDevice(ctx context.Context, deviceID string) error
 }
 
+// PresenceMonitor is the subset of *heartbeat.Monitor's API DeviceService
+// needs (issue #42): Touch marks a device alive right now. RegisterDevice
+// touches on (re-)registration; StreamCommands touches once on connect and
+// then on every tick of Interval for as long as the stream stays open —
+// treating an open direct-gRPC connection as its own continuous heartbeat,
+// since there's no per-message heartbeat protocol for that transport.
+type PresenceMonitor interface {
+	Touch(deviceID string) error
+	Interval() time.Duration
+}
+
 // DeviceService implements udalv1.DeviceServiceServer.
 // It delegates device registration to a Registry; property storage goes to
 // a PropertyStore for most devices, or to an MQTTAdapter for devices whose
@@ -46,6 +57,7 @@ type DeviceService struct {
 	broker   *api.Broker
 	commands *api.CommandRouter
 	mqtt     MQTTAdapter
+	presence PresenceMonitor
 }
 
 // New returns a DeviceService backed by the given Registry, PropertyStore,
@@ -61,6 +73,12 @@ func New(reg registry.Registry, props api.PropertyStore, broker *api.Broker, com
 // exactly as before (mqtt-transport devices fall through to PropertyStore,
 // same as any other transport).
 func (s *DeviceService) SetMQTTAdapter(a MQTTAdapter) { s.mqtt = a }
+
+// SetPresenceMonitor wires a PresenceMonitor into the service so
+// RegisterDevice and StreamCommands report device liveness to it (issue
+// #42). Optional — without one, neither touches anything (no behavior
+// change from before this feature existed).
+func (s *DeviceService) SetPresenceMonitor(m PresenceMonitor) { s.presence = m }
 
 // mqttStatusError maps an MQTTAdapter error to a gRPC status.
 func mqttStatusError(err error) error {
@@ -178,6 +196,19 @@ func (s *DeviceService) RegisterDevice(ctx context.Context, req *udalv1.Register
 		// broker-wide wildcard).
 		_ = s.mqtt.WatchDevice(ctx, d.ID)
 	}
+	if s.presence != nil {
+		// Marks the device online immediately on (re-)registration —
+		// covers "device reconnects -> online=true" (#42 AC3) for the
+		// case of a device re-registering after a gateway/process
+		// restart, without waiting for its next heartbeat. Re-fetch so
+		// the response reflects the just-touched status rather than the
+		// pre-touch snapshot from Register.
+		if err := s.presence.Touch(d.ID); err == nil {
+			if touched, err := s.reg.Get(d.ID); err == nil {
+				d = touched
+			}
+		}
+	}
 	return &udalv1.RegisterDeviceResponse{Device: toProtoDevice(d)}, nil
 }
 
@@ -294,8 +325,9 @@ func (s *DeviceService) SetProperty(ctx context.Context, req *udalv1.SetProperty
 // ─── Streaming RPC ────────────────────────────────────────────────────────────
 
 // Subscribe streams PropertyUpdate events for a device until the client
-// disconnects. If req.PropertyPath is set, only events for that exact path
-// are forwarded; otherwise every property update for the device is sent.
+// disconnects. If req.PropertyPath is set, only property updates for that
+// exact path are forwarded; device online/offline status events (F-04 /
+// #42) are always forwarded regardless, since they aren't property-scoped.
 func (s *DeviceService) Subscribe(req *udalv1.SubscribeRequest, stream udalv1.DeviceService_SubscribeServer) error {
 	if req.GetDeviceId() == "" {
 		return status.Error(codes.InvalidArgument, "device_id is required")
@@ -323,20 +355,31 @@ func (s *DeviceService) Subscribe(req *udalv1.SubscribeRequest, stream udalv1.De
 			if !ok {
 				return nil
 			}
-			if req.GetPropertyPath() != "" && update.PropertyPath != req.GetPropertyPath() {
-				continue
+			var resp *udalv1.SubscribeResponse
+			if update.Status != nil {
+				// Status events (F-04 / #42) aren't scoped to a property
+				// path — always forwarded, unlike property updates below.
+				resp = &udalv1.SubscribeResponse{
+					DeviceId:  update.DeviceID,
+					Status:    toProtoDeviceStatus(*update.Status),
+					Timestamp: timestamppb.New(update.Timestamp),
+				}
+			} else {
+				if req.GetPropertyPath() != "" && update.PropertyPath != req.GetPropertyPath() {
+					continue
+				}
+				pbVal, err := toProtoValue(update.Value)
+				if err != nil {
+					continue
+				}
+				resp = &udalv1.SubscribeResponse{
+					DeviceId:     update.DeviceID,
+					PropertyPath: update.PropertyPath,
+					Value:        pbVal,
+					Timestamp:    timestamppb.New(update.Timestamp),
+				}
 			}
-			pbVal, err := toProtoValue(update.Value)
-			if err != nil {
-				continue
-			}
-			err = stream.Send(&udalv1.SubscribeResponse{
-				DeviceId:     update.DeviceID,
-				PropertyPath: update.PropertyPath,
-				Value:        pbVal,
-				Timestamp:    timestamppb.New(update.Timestamp),
-			})
-			if err != nil {
+			if err := stream.Send(resp); err != nil {
 				return err
 			}
 		}
@@ -418,6 +461,25 @@ func (s *DeviceService) StreamCommands(stream udalv1.DeviceService_StreamCommand
 	commands, unregister := s.commands.Register(deviceID)
 	defer unregister()
 
+	// An open StreamCommands connection is itself a continuous liveness
+	// signal (#42): touch presence now and on every tick thereafter, for
+	// as long as the stream stays open, so a device with no in-flight
+	// commands doesn't get incorrectly timed out. heartbeatTick stays nil
+	// (blocks forever, never selected below) if no PresenceMonitor is
+	// configured, or if one is but reports a non-positive interval --
+	// time.NewTicker panics on <= 0, and a single misbehaving
+	// PresenceMonitor implementation shouldn't be able to crash every
+	// connected device's StreamCommands handler.
+	var heartbeatTick <-chan time.Time
+	if s.presence != nil {
+		_ = s.presence.Touch(deviceID)
+		if interval := s.presence.Interval(); interval > 0 {
+			ticker := time.NewTicker(interval)
+			defer ticker.Stop()
+			heartbeatTick = ticker.C
+		}
+	}
+
 	recvErr := make(chan error, 1)
 	go func() {
 		for {
@@ -444,6 +506,8 @@ func (s *DeviceService) StreamCommands(stream udalv1.DeviceService_StreamCommand
 				return nil
 			}
 			return err
+		case <-heartbeatTick:
+			_ = s.presence.Touch(deviceID)
 		case cmd, ok := <-commands:
 			if !ok {
 				return nil
@@ -472,19 +536,23 @@ func toProtoDevice(d api.Device) *udalv1.Device {
 		Capability: d.Capability,
 		Transport:  d.Transport,
 		Labels:     d.Labels,
-	}
-	switch d.Status {
-	case api.DeviceStatusOnline:
-		pb.Status = udalv1.DeviceStatus_DEVICE_STATUS_ONLINE
-	case api.DeviceStatusOffline:
-		pb.Status = udalv1.DeviceStatus_DEVICE_STATUS_OFFLINE
-	default:
-		pb.Status = udalv1.DeviceStatus_DEVICE_STATUS_UNKNOWN
+		Status:     toProtoDeviceStatus(d.Status),
 	}
 	if !d.LastSeen.IsZero() {
 		pb.LastSeen = timestamppb.New(d.LastSeen)
 	}
 	return pb
+}
+
+func toProtoDeviceStatus(s api.DeviceStatus) udalv1.DeviceStatus {
+	switch s {
+	case api.DeviceStatusOnline:
+		return udalv1.DeviceStatus_DEVICE_STATUS_ONLINE
+	case api.DeviceStatusOffline:
+		return udalv1.DeviceStatus_DEVICE_STATUS_OFFLINE
+	default:
+		return udalv1.DeviceStatus_DEVICE_STATUS_UNKNOWN
+	}
 }
 
 func toProtoValue(v api.PropertyValue) (*udalv1.PropertyValue, error) {

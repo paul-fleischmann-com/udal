@@ -1094,13 +1094,19 @@ func (x *SubscribeRequest) GetPropertyPath() string {
 	return ""
 }
 
-// SubscribeResponse is one streamed event from the Subscribe RPC.
+// SubscribeResponse is one streamed event from the Subscribe RPC: either a
+// property value update (property_path/value set, status unset) or a
+// device online/offline transition (status set to something other than
+// DEVICE_STATUS_UNSPECIFIED; property_path/value unset) — see F-04 /
+// GitHub issue #42. A single stream carries both kinds so Subscribe's
+// existing fan-out mechanism didn't need a second RPC.
 type SubscribeResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	DeviceId      string                 `protobuf:"bytes,1,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
 	PropertyPath  string                 `protobuf:"bytes,2,opt,name=property_path,json=propertyPath,proto3" json:"property_path,omitempty"`
 	Value         *PropertyValue         `protobuf:"bytes,3,opt,name=value,proto3" json:"value,omitempty"`
 	Timestamp     *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
+	Status        DeviceStatus           `protobuf:"varint,5,opt,name=status,proto3,enum=udal.v1.DeviceStatus" json:"status,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1161,6 +1167,13 @@ func (x *SubscribeResponse) GetTimestamp() *timestamppb.Timestamp {
 		return x.Timestamp
 	}
 	return nil
+}
+
+func (x *SubscribeResponse) GetStatus() DeviceStatus {
+	if x != nil {
+		return x.Status
+	}
+	return DeviceStatus_DEVICE_STATUS_UNSPECIFIED
 }
 
 // Command is one command dispatched to a device via StreamCommands, in
@@ -1372,12 +1385,13 @@ const file_udal_v1_device_proto_rawDesc = "" +
 	"\x06result\x18\x01 \x01(\v2\x16.google.protobuf.ValueR\x06result\"T\n" +
 	"\x10SubscribeRequest\x12\x1b\n" +
 	"\tdevice_id\x18\x01 \x01(\tR\bdeviceId\x12#\n" +
-	"\rproperty_path\x18\x02 \x01(\tR\fpropertyPath\"\xbd\x01\n" +
+	"\rproperty_path\x18\x02 \x01(\tR\fpropertyPath\"\xec\x01\n" +
 	"\x11SubscribeResponse\x12\x1b\n" +
 	"\tdevice_id\x18\x01 \x01(\tR\bdeviceId\x12#\n" +
 	"\rproperty_path\x18\x02 \x01(\tR\fpropertyPath\x12,\n" +
 	"\x05value\x18\x03 \x01(\v2\x16.udal.v1.PropertyValueR\x05value\x128\n" +
-	"\ttimestamp\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\ttimestamp\"^\n" +
+	"\ttimestamp\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\ttimestamp\x12-\n" +
+	"\x06status\x18\x05 \x01(\x0e2\x15.udal.v1.DeviceStatusR\x06status\"^\n" +
 	"\aCommand\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12/\n" +
@@ -1463,31 +1477,32 @@ var file_udal_v1_device_proto_depIdxs = []int32{
 	24, // 13: udal.v1.SendCommandResponse.result:type_name -> google.protobuf.Value
 	2,  // 14: udal.v1.SubscribeResponse.value:type_name -> udal.v1.PropertyValue
 	23, // 15: udal.v1.SubscribeResponse.timestamp:type_name -> google.protobuf.Timestamp
-	25, // 16: udal.v1.Command.params:type_name -> google.protobuf.Struct
-	24, // 17: udal.v1.CommandResult.result:type_name -> google.protobuf.Value
-	3,  // 18: udal.v1.DeviceService.GetDevice:input_type -> udal.v1.GetDeviceRequest
-	5,  // 19: udal.v1.DeviceService.ListDevices:input_type -> udal.v1.ListDevicesRequest
-	7,  // 20: udal.v1.DeviceService.RegisterDevice:input_type -> udal.v1.RegisterDeviceRequest
-	9,  // 21: udal.v1.DeviceService.DeleteDevice:input_type -> udal.v1.DeleteDeviceRequest
-	11, // 22: udal.v1.DeviceService.GetProperty:input_type -> udal.v1.GetPropertyRequest
-	13, // 23: udal.v1.DeviceService.SetProperty:input_type -> udal.v1.SetPropertyRequest
-	15, // 24: udal.v1.DeviceService.SendCommand:input_type -> udal.v1.SendCommandRequest
-	17, // 25: udal.v1.DeviceService.Subscribe:input_type -> udal.v1.SubscribeRequest
-	20, // 26: udal.v1.DeviceService.StreamCommands:input_type -> udal.v1.CommandResult
-	4,  // 27: udal.v1.DeviceService.GetDevice:output_type -> udal.v1.GetDeviceResponse
-	6,  // 28: udal.v1.DeviceService.ListDevices:output_type -> udal.v1.ListDevicesResponse
-	8,  // 29: udal.v1.DeviceService.RegisterDevice:output_type -> udal.v1.RegisterDeviceResponse
-	10, // 30: udal.v1.DeviceService.DeleteDevice:output_type -> udal.v1.DeleteDeviceResponse
-	12, // 31: udal.v1.DeviceService.GetProperty:output_type -> udal.v1.GetPropertyResponse
-	14, // 32: udal.v1.DeviceService.SetProperty:output_type -> udal.v1.SetPropertyResponse
-	16, // 33: udal.v1.DeviceService.SendCommand:output_type -> udal.v1.SendCommandResponse
-	18, // 34: udal.v1.DeviceService.Subscribe:output_type -> udal.v1.SubscribeResponse
-	19, // 35: udal.v1.DeviceService.StreamCommands:output_type -> udal.v1.Command
-	27, // [27:36] is the sub-list for method output_type
-	18, // [18:27] is the sub-list for method input_type
-	18, // [18:18] is the sub-list for extension type_name
-	18, // [18:18] is the sub-list for extension extendee
-	0,  // [0:18] is the sub-list for field type_name
+	0,  // 16: udal.v1.SubscribeResponse.status:type_name -> udal.v1.DeviceStatus
+	25, // 17: udal.v1.Command.params:type_name -> google.protobuf.Struct
+	24, // 18: udal.v1.CommandResult.result:type_name -> google.protobuf.Value
+	3,  // 19: udal.v1.DeviceService.GetDevice:input_type -> udal.v1.GetDeviceRequest
+	5,  // 20: udal.v1.DeviceService.ListDevices:input_type -> udal.v1.ListDevicesRequest
+	7,  // 21: udal.v1.DeviceService.RegisterDevice:input_type -> udal.v1.RegisterDeviceRequest
+	9,  // 22: udal.v1.DeviceService.DeleteDevice:input_type -> udal.v1.DeleteDeviceRequest
+	11, // 23: udal.v1.DeviceService.GetProperty:input_type -> udal.v1.GetPropertyRequest
+	13, // 24: udal.v1.DeviceService.SetProperty:input_type -> udal.v1.SetPropertyRequest
+	15, // 25: udal.v1.DeviceService.SendCommand:input_type -> udal.v1.SendCommandRequest
+	17, // 26: udal.v1.DeviceService.Subscribe:input_type -> udal.v1.SubscribeRequest
+	20, // 27: udal.v1.DeviceService.StreamCommands:input_type -> udal.v1.CommandResult
+	4,  // 28: udal.v1.DeviceService.GetDevice:output_type -> udal.v1.GetDeviceResponse
+	6,  // 29: udal.v1.DeviceService.ListDevices:output_type -> udal.v1.ListDevicesResponse
+	8,  // 30: udal.v1.DeviceService.RegisterDevice:output_type -> udal.v1.RegisterDeviceResponse
+	10, // 31: udal.v1.DeviceService.DeleteDevice:output_type -> udal.v1.DeleteDeviceResponse
+	12, // 32: udal.v1.DeviceService.GetProperty:output_type -> udal.v1.GetPropertyResponse
+	14, // 33: udal.v1.DeviceService.SetProperty:output_type -> udal.v1.SetPropertyResponse
+	16, // 34: udal.v1.DeviceService.SendCommand:output_type -> udal.v1.SendCommandResponse
+	18, // 35: udal.v1.DeviceService.Subscribe:output_type -> udal.v1.SubscribeResponse
+	19, // 36: udal.v1.DeviceService.StreamCommands:output_type -> udal.v1.Command
+	28, // [28:37] is the sub-list for method output_type
+	19, // [19:28] is the sub-list for method input_type
+	19, // [19:19] is the sub-list for extension type_name
+	19, // [19:19] is the sub-list for extension extendee
+	0,  // [0:19] is the sub-list for field type_name
 }
 
 func init() { file_udal_v1_device_proto_init() }

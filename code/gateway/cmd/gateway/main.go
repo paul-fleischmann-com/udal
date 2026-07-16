@@ -21,6 +21,7 @@ import (
 	"github.com/paulefl/udal/code/gateway/internal/api"
 	"github.com/paulefl/udal/code/gateway/internal/auth"
 	"github.com/paulefl/udal/code/gateway/internal/config"
+	"github.com/paulefl/udal/code/gateway/internal/heartbeat"
 	"github.com/paulefl/udal/code/gateway/internal/registry"
 	"github.com/paulefl/udal/code/gateway/internal/service"
 	"google.golang.org/grpc"
@@ -83,12 +84,20 @@ func main() {
 	commands := api.NewCommandRouter()
 	svc := service.New(reg, props, broker, commands)
 
+	// ─── Heartbeat / online status (F-04, issue #42) ──────────────────────────
+	presence := heartbeat.NewMonitor(reg, broker, time.Duration(cfg.Gateway.HeartbeatInterval), time.Duration(cfg.Gateway.DeviceTimeout))
+	svc.SetPresenceMonitor(presence)
+	presenceCtx, presenceCancel := context.WithCancel(context.Background())
+	go presence.Run(presenceCtx)
+
 	// ─── MQTT transport adapter (F-09) ────────────────────────────────────────
 	var mqttAdapter *mqttadapter.Adapter
 	if mqttBroker := config.ResolveString(os.Getenv("UDAL_MQTT_BROKER"), cfg.Gateway.Adapters.MQTT.Broker, ""); mqttBroker != "" {
 		mqttAdapter = mqttadapter.New(mqttBroker, func(deviceID, path string, v api.PropertyValue) {
 			broker.Publish(api.PropertyUpdate{DeviceID: deviceID, PropertyPath: path, Value: v, Timestamp: time.Now()})
-		}, mqttadapter.WithLogger(log))
+		}, mqttadapter.WithLogger(log), mqttadapter.WithOnHeartbeat(func(deviceID string) {
+			_ = presence.Touch(deviceID)
+		}))
 		if err := mqttAdapter.Connect(context.Background()); err != nil {
 			log.Error("connect to MQTT broker", "broker", mqttBroker, "err", err)
 			os.Exit(1)
@@ -302,6 +311,7 @@ func main() {
 			log.Error("MQTT disconnect", "err", err)
 		}
 	}
+	presenceCancel()
 	log.Info("stopped")
 }
 
