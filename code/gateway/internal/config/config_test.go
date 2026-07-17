@@ -29,6 +29,10 @@ gateway:
       client_id: udal-gateway
     http:
       poll_interval: 5s
+      webhook_port: 8090
+      mtls:
+        cert: /etc/udal/tls/http-client.crt
+        key: /etc/udal/tls/http-client.key
     can:
       interface: can0
   heartbeat_interval: 30s
@@ -67,6 +71,12 @@ func TestLoad_FullSample(t *testing.T) {
 	}
 	if time.Duration(g.Adapters.HTTP.PollInterval) != 5*time.Second {
 		t.Errorf("adapters.http.poll_interval = %v, want 5s", time.Duration(g.Adapters.HTTP.PollInterval))
+	}
+	if g.Adapters.HTTP.WebhookPort != 8090 {
+		t.Errorf("adapters.http.webhook_port = %d, want 8090", g.Adapters.HTTP.WebhookPort)
+	}
+	if g.Adapters.HTTP.MTLS.Cert != "/etc/udal/tls/http-client.crt" || g.Adapters.HTTP.MTLS.Key != "/etc/udal/tls/http-client.key" {
+		t.Errorf("adapters.http.mtls = %+v", g.Adapters.HTTP.MTLS)
 	}
 	if g.Adapters.CAN.Interface != "can0" {
 		t.Errorf("adapters.can.interface = %q, want can0", g.Adapters.CAN.Interface)
@@ -131,6 +141,9 @@ func TestApplyEnv_OverridesEverySettableField(t *testing.T) {
 		"UDAL_MQTT_BROKER":        "tcp://broker:1883",
 		"UDAL_MQTT_CLIENT_ID":     "custom-client",
 		"UDAL_HTTP_POLL_INTERVAL": "10s",
+		"UDAL_HTTP_WEBHOOK_PORT":  "8091",
+		"UDAL_HTTP_MTLS_CERT":     "http-client-cert.pem",
+		"UDAL_HTTP_MTLS_KEY":      "http-client-key.pem",
 		"UDAL_CAN_INTERFACE":      "vcan0",
 		"UDAL_HEARTBEAT_INTERVAL": "45s",
 		"UDAL_DEVICE_TIMEOUT":     "120s",
@@ -161,6 +174,12 @@ func TestApplyEnv_OverridesEverySettableField(t *testing.T) {
 	}
 	if time.Duration(g.Adapters.HTTP.PollInterval) != 10*time.Second {
 		t.Errorf("adapters.http.poll_interval = %v", time.Duration(g.Adapters.HTTP.PollInterval))
+	}
+	if g.Adapters.HTTP.WebhookPort != 8091 {
+		t.Errorf("adapters.http.webhook_port = %d", g.Adapters.HTTP.WebhookPort)
+	}
+	if g.Adapters.HTTP.MTLS.Cert != "http-client-cert.pem" || g.Adapters.HTTP.MTLS.Key != "http-client-key.pem" {
+		t.Errorf("adapters.http.mtls = %+v", g.Adapters.HTTP.MTLS)
 	}
 	if g.Adapters.CAN.Interface != "vcan0" {
 		t.Errorf("adapters.can.interface = %q", g.Adapters.CAN.Interface)
