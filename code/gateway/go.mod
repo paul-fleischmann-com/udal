@@ -7,6 +7,7 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.20.0
 	github.com/paulefl/udal/code/api/proto/gen v0.0.0
+	github.com/santhosh-tekuri/jsonschema/v5 v5.3.1
 	go.etcd.io/bbolt v1.4.3
 	golang.org/x/crypto v0.48.0
 	google.golang.org/grpc v1.79.3

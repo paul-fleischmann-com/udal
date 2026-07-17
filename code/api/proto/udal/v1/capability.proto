@@ -1,0 +1,67 @@
+syntax = "proto3";
+
+package udal.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/paulefl/udal/code/api/proto/gen/udal/v1;udalv1";
+
+// A published capability schema (F-13): immutable once published, uniquely
+// identified by name+version ("name@version", see req42.adoc F-13).
+message CapabilitySchema {
+  string name        = 1;
+  string version     = 2;
+  string description = 3;
+  // The full schema document exactly as published (JSON, UTF-8), validated
+  // against schema/udal-capability.schema.json at publish time.
+  bytes                     raw          = 4;
+  google.protobuf.Timestamp published_at = 5;
+}
+
+message PublishSchemaRequest {
+  // The capability schema document to validate and publish (JSON, UTF-8).
+  bytes schema = 1;
+}
+message PublishSchemaResponse {
+  CapabilitySchema schema = 1;
+}
+
+message GetSchemaRequest {
+  string name    = 1;
+  string version = 2;
+}
+message GetSchemaResponse {
+  CapabilitySchema schema = 1;
+}
+
+message ListSchemasRequest {
+  string name = 1;  // filter by name; empty = all
+}
+message ListSchemasResponse {
+  repeated CapabilitySchema schemas = 1;
+}
+
+// CapabilityService stores, versions, and serves capability schemas (F-13),
+// enforced elsewhere by DeviceService during device registration (F-14) and
+// property writes (F-15).
+service CapabilityService {
+  rpc PublishSchema(PublishSchemaRequest) returns (PublishSchemaResponse) {
+    option (google.api.http) = {
+      post: "/v1/schemas"
+      body: "*"
+    };
+  }
+
+  rpc GetSchema(GetSchemaRequest) returns (GetSchemaResponse) {
+    option (google.api.http) = {
+      get: "/v1/schemas/{name}/{version}"
+    };
+  }
+
+  rpc ListSchemas(ListSchemasRequest) returns (ListSchemasResponse) {
+    option (google.api.http) = {
+      get: "/v1/schemas"
+    };
+  }
+}

@@ -48,6 +48,19 @@ const (
 	// the #12 plan doc); treated the same as SendCommand/SetProperty — a
 	// device may only open its own command stream.
 	OpStreamCommands Operation = "StreamCommands"
+
+	// OpPublishSchema/OpGetSchema/OpListSchemas (CapabilityService, #22)
+	// aren't in F-19's table either, which predates this service — a
+	// documented judgment call, same as OpDeleteDevice above. Publishing a
+	// schema is treated like RegisterDevice minus the device role (a
+	// device registers itself, but doesn't define capability schemas for
+	// the system); reading schemas is treated like GetDevice/ListDevices
+	// (any authenticated non-device caller), since a device references its
+	// own capability by name at registration time rather than fetching the
+	// schema's content through this API.
+	OpPublishSchema Operation = "PublishSchema"
+	OpGetSchema     Operation = "GetSchema"
+	OpListSchemas   Operation = "ListSchemas"
 )
 
 // permission describes what a caller in a given role may do for an
@@ -74,6 +87,9 @@ var rbac = map[Operation]map[Role]permission{
 	OpSendCommand:    {RoleAdmin: allow, RoleOperator: allow, RoleReader: deny, RoleDevice: ownOnly},
 	OpSubscribe:      {RoleAdmin: allow, RoleOperator: allow, RoleReader: allow, RoleDevice: ownOnly},
 	OpStreamCommands: {RoleAdmin: allow, RoleOperator: allow, RoleReader: deny, RoleDevice: ownOnly},
+	OpPublishSchema:  {RoleAdmin: allow, RoleOperator: allow, RoleReader: deny, RoleDevice: deny},
+	OpGetSchema:      {RoleAdmin: allow, RoleOperator: allow, RoleReader: allow, RoleDevice: deny},
+	OpListSchemas:    {RoleAdmin: allow, RoleOperator: allow, RoleReader: allow, RoleDevice: deny},
 }
 
 // Authorize decides whether id may perform op against the device identified

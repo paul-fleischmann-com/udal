@@ -20,6 +20,7 @@ import (
 	mqttadapter "github.com/paulefl/udal/code/gateway/internal/adapters/mqtt"
 	"github.com/paulefl/udal/code/gateway/internal/api"
 	"github.com/paulefl/udal/code/gateway/internal/auth"
+	"github.com/paulefl/udal/code/gateway/internal/capability"
 	"github.com/paulefl/udal/code/gateway/internal/config"
 	"github.com/paulefl/udal/code/gateway/internal/heartbeat"
 	"github.com/paulefl/udal/code/gateway/internal/registry"
@@ -83,6 +84,23 @@ func main() {
 	broker := api.NewBroker()
 	commands := api.NewCommandRouter()
 	svc := service.New(reg, props, broker, commands)
+
+	// ─── Capability Registry (F-13/F-14/F-15, issue #22) ──────────────────────
+	// CapabilityService (Publish/Get/List) is always available, so schemas
+	// can be published ahead of time — but enforcement (RegisterDevice/
+	// SetProperty validating against a device's declared schema) is opt-in
+	// via UDAL_CAPABILITY_ENFORCEMENT: turning it on unconditionally would
+	// make every RegisterDevice call require a pre-published schema,
+	// breaking any existing deployment whose devices don't have one yet.
+	capabilityReg, err := capability.NewBboltRegistry(reg.DB(), capability.WithLogger(log))
+	if err != nil {
+		log.Error("open capability registry", "err", err)
+		os.Exit(1)
+	}
+	capSvc := service.NewCapabilityService(capabilityReg)
+	if envOr("UDAL_CAPABILITY_ENFORCEMENT", "false") == "true" {
+		svc.SetCapabilityRegistry(capabilityReg)
+	}
 
 	// ─── Heartbeat / online status (F-04, issue #42) ──────────────────────────
 	presence := heartbeat.NewMonitor(reg, broker, time.Duration(cfg.Gateway.HeartbeatInterval), time.Duration(cfg.Gateway.DeviceTimeout))
@@ -234,6 +252,7 @@ func main() {
 
 	grpcServer := grpc.NewServer(serverOpts...)
 	udalv1.RegisterDeviceServiceServer(grpcServer, svc)
+	udalv1.RegisterCapabilityServiceServer(grpcServer, capSvc)
 	reflection.Register(grpcServer)
 
 	lis, err := net.Listen("tcp", grpcAddr)
@@ -269,6 +288,10 @@ func main() {
 
 	if err := udalv1.RegisterDeviceServiceHandlerFromEndpoint(ctx, mux, grpcAddr, opts); err != nil {
 		log.Error("register REST gateway", "err", err)
+		os.Exit(1)
+	}
+	if err := udalv1.RegisterCapabilityServiceHandlerFromEndpoint(ctx, mux, grpcAddr, opts); err != nil {
+		log.Error("register capability REST gateway", "err", err)
 		os.Exit(1)
 	}
 
