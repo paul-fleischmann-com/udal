@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 )
 
 // Schema is a parsed capability schema document (schema/udal-capability.schema.json).
@@ -18,6 +19,10 @@ type Schema struct {
 	// truth returned to callers, never re-derived from the parsed fields
 	// below.
 	Raw []byte
+	// PublishedAt is storage metadata, not part of the document itself —
+	// Parse leaves it zero; a Registry sets it at Publish time and persists
+	// it alongside Raw (see bbolt.go's storedSchema envelope).
+	PublishedAt time.Time
 
 	Definitions map[string]TypeDef
 	Properties  map[string]PropertyDef

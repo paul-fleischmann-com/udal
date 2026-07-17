@@ -1,12 +1,23 @@
 package capability
 
 import (
+	"encoding/json"
 	"fmt"
+	"time"
 
 	"go.etcd.io/bbolt"
 )
 
 var capabilityBucket = []byte("capability_schemas")
+
+// storedSchema is the bbolt storage envelope: the raw published document
+// plus PublishedAt, which isn't part of the document itself and would
+// otherwise be lost across a restart (Publish always sets it to time.Now()
+// right before storing).
+type storedSchema struct {
+	PublishedAt time.Time       `json:"published_at"`
+	Raw         json.RawMessage `json:"raw"`
+}
 
 // BboltRegistry is a Registry persisted to an embedded bbolt database.
 // Callers share the same *bbolt.DB the device Registry (and API-key store)
@@ -30,14 +41,21 @@ func NewBboltRegistry(db *bbolt.DB, opts ...Option) (*BboltRegistry, error) {
 	return &BboltRegistry{opts: newOptions(opts), db: db}, nil
 }
 
-// Only the raw published document is persisted; Get/List re-Parse it, so
-// there's exactly one source of truth for a schema's parsed shape (the
-// same bytes that were validated at Publish time) rather than a second,
+// Only the raw published document (plus the storedSchema envelope's
+// PublishedAt) is persisted; Get/List re-Parse the document, so there's
+// exactly one source of truth for a schema's parsed shape (the same bytes
+// that were validated at Publish time) rather than a second,
 // independently-serialized copy of the derived fields that could drift.
 func (r *BboltRegistry) Publish(raw []byte) (Schema, error) {
 	s, err := validateAndParse(raw)
 	if err != nil {
 		return Schema{}, err
+	}
+	s.PublishedAt = time.Now()
+
+	stored, err := json.Marshal(storedSchema{PublishedAt: s.PublishedAt, Raw: raw})
+	if err != nil {
+		return Schema{}, fmt.Errorf("capability: encode stored schema: %w", err)
 	}
 
 	key := []byte(publishKey(s.Name, s.Version))
@@ -53,11 +71,24 @@ func (r *BboltRegistry) Publish(raw []byte) (Schema, error) {
 			warnIfBreaking(r.opts.log, latest, s)
 		}
 
-		return b.Put(key, raw)
+		return b.Put(key, stored)
 	})
 	if err != nil {
 		return Schema{}, err
 	}
+	return s, nil
+}
+
+func decodeStoredSchema(k, v []byte) (Schema, error) {
+	var stored storedSchema
+	if err := json.Unmarshal(v, &stored); err != nil {
+		return Schema{}, fmt.Errorf("capability: corrupt stored schema %s: %w", k, err)
+	}
+	s, err := Parse(stored.Raw)
+	if err != nil {
+		return Schema{}, fmt.Errorf("capability: corrupt stored schema %s: %w", k, err)
+	}
+	s.PublishedAt = stored.PublishedAt
 	return s, nil
 }
 
@@ -67,9 +98,9 @@ func (r *BboltRegistry) latestInTx(b *bbolt.Bucket, name string) (Schema, bool, 
 	found := false
 	c := b.Cursor()
 	for k, v := c.First(); k != nil; k, v = c.Next() {
-		existing, err := Parse(v)
+		existing, err := decodeStoredSchema(k, v)
 		if err != nil {
-			return Schema{}, false, fmt.Errorf("capability: corrupt stored schema %s: %w", k, err)
+			return Schema{}, false, err
 		}
 		if existing.Name != name {
 			continue
@@ -88,13 +119,14 @@ func (r *BboltRegistry) latestInTx(b *bbolt.Bucket, name string) (Schema, bool, 
 func (r *BboltRegistry) Get(name, version string) (Schema, error) {
 	var s Schema
 	err := r.db.View(func(tx *bbolt.Tx) error {
-		data := tx.Bucket(capabilityBucket).Get([]byte(publishKey(name, version)))
+		key := []byte(publishKey(name, version))
+		data := tx.Bucket(capabilityBucket).Get(key)
 		if data == nil {
 			return fmt.Errorf("%w: %s", ErrNotFound, publishKey(name, version))
 		}
-		parsed, err := Parse(data)
+		parsed, err := decodeStoredSchema(key, data)
 		if err != nil {
-			return fmt.Errorf("capability: corrupt stored schema %s: %w", publishKey(name, version), err)
+			return err
 		}
 		s = parsed
 		return nil
@@ -109,9 +141,9 @@ func (r *BboltRegistry) List(name string) ([]Schema, error) {
 	var out []Schema
 	err := r.db.View(func(tx *bbolt.Tx) error {
 		return tx.Bucket(capabilityBucket).ForEach(func(k, v []byte) error {
-			s, err := Parse(v)
+			s, err := decodeStoredSchema(k, v)
 			if err != nil {
-				return fmt.Errorf("capability: corrupt stored schema %s: %w", k, err)
+				return err
 			}
 			if name != "" && s.Name != name {
 				return nil

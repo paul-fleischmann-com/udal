@@ -7,12 +7,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	udalv1 "github.com/paulefl/udal/code/api/proto/gen/udal/v1"
 	mqttadapter "github.com/paulefl/udal/code/gateway/internal/adapters/mqtt"
 	"github.com/paulefl/udal/code/gateway/internal/api"
 	"github.com/paulefl/udal/code/gateway/internal/auth"
+	"github.com/paulefl/udal/code/gateway/internal/capability"
 	"github.com/paulefl/udal/code/gateway/internal/registry"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -42,6 +44,14 @@ type PresenceMonitor interface {
 	Interval() time.Duration
 }
 
+// CapabilityRegistry is the subset of *capability.Registry's API
+// DeviceService needs (issue #22): resolving a device's declared capability
+// ("name@version", see RegisterDevice) to validate it exists (F-14) and to
+// validate SetProperty values against its declared property types (F-15).
+type CapabilityRegistry interface {
+	Get(name, version string) (capability.Schema, error)
+}
+
 // DeviceService implements udalv1.DeviceServiceServer.
 // It delegates device registration to a Registry; property storage goes to
 // a PropertyStore for most devices, or to an MQTTAdapter for devices whose
@@ -52,12 +62,13 @@ type PresenceMonitor interface {
 // returns Unimplemented for mqtt-transport devices.
 type DeviceService struct {
 	udalv1.UnimplementedDeviceServiceServer
-	reg      registry.Registry
-	props    api.PropertyStore
-	broker   *api.Broker
-	commands *api.CommandRouter
-	mqtt     MQTTAdapter
-	presence PresenceMonitor
+	reg        registry.Registry
+	props      api.PropertyStore
+	broker     *api.Broker
+	commands   *api.CommandRouter
+	mqtt       MQTTAdapter
+	presence   PresenceMonitor
+	capability CapabilityRegistry
 }
 
 // New returns a DeviceService backed by the given Registry, PropertyStore,
@@ -79,6 +90,46 @@ func (s *DeviceService) SetMQTTAdapter(a MQTTAdapter) { s.mqtt = a }
 // #42). Optional — without one, neither touches anything (no behavior
 // change from before this feature existed).
 func (s *DeviceService) SetPresenceMonitor(m PresenceMonitor) { s.presence = m }
+
+// SetCapabilityRegistry wires a CapabilityRegistry into the service so
+// RegisterDevice validates the declared capability schema exists (F-14) and
+// SetProperty validates values against it (F-15). Optional — a
+// DeviceService without one behaves exactly as before (no schema
+// enforcement at all), so existing devices/tests that register with an
+// arbitrary Capability string are unaffected unless this is configured.
+func (s *DeviceService) SetCapabilityRegistry(r CapabilityRegistry) { s.capability = r }
+
+// splitCapabilityRef splits a "name@version" capability reference. Devices
+// declare their capability this way once a CapabilityRegistry is
+// configured (see req42.adoc F-13: schemas are "retrievable by
+// name@version").
+func splitCapabilityRef(ref string) (name, version string, ok bool) {
+	name, version, ok = strings.Cut(ref, "@")
+	if !ok || name == "" || version == "" {
+		return "", "", false
+	}
+	return name, version, true
+}
+
+// capabilityRefStatusError maps a capability.Registry lookup/validation
+// error (from RegisterDevice/SetProperty resolving a device's declared
+// schema) to a gRPC status. Distinct from CapabilityService's own
+// capabilityStatusError (in capability_service.go, for its Publish/Get/List
+// RPCs) despite the overlapping error set — kept separate since the two
+// callers reach these errors through different code paths and one extra
+// case here (ErrPropertyNotDeclared) doesn't apply to the other at all.
+func capabilityRefStatusError(err error) error {
+	switch {
+	case errors.Is(err, capability.ErrNotFound):
+		return status.Errorf(codes.NotFound, "%v", err)
+	case errors.Is(err, capability.ErrPropertyNotDeclared):
+		return status.Errorf(codes.NotFound, "%v", err)
+	case errors.Is(err, capability.ErrInvalidPropertyValue):
+		return status.Errorf(codes.InvalidArgument, "%v", err)
+	default:
+		return status.Errorf(codes.Internal, "%v", err)
+	}
+}
 
 // mqttStatusError maps an MQTTAdapter error to a gRPC status.
 func mqttStatusError(err error) error {
@@ -170,6 +221,18 @@ func (s *DeviceService) RegisterDevice(ctx context.Context, req *udalv1.Register
 	}
 	if err := s.authorizeNoDevice(ctx, auth.OpRegisterDevice); err != nil {
 		return nil, err
+	}
+	if s.capability != nil {
+		// F-14: reject registration if the declared capability schema
+		// doesn't exist. Devices reference a schema as "name@version" once
+		// a CapabilityRegistry is configured (see SetCapabilityRegistry).
+		name, version, ok := splitCapabilityRef(req.GetCapability())
+		if !ok {
+			return nil, status.Errorf(codes.NotFound, "capability %q is not a valid name@version reference", req.GetCapability())
+		}
+		if _, err := s.capability.Get(name, version); err != nil {
+			return nil, capabilityRefStatusError(err)
+		}
 	}
 	d, err := s.reg.Register(api.Device{
 		ID:         req.GetId(),
@@ -291,6 +354,25 @@ func (s *DeviceService) SetProperty(ctx context.Context, req *udalv1.SetProperty
 		return nil, err
 	}
 	v := fromProtoValue(req.GetValue())
+
+	if s.capability != nil {
+		// F-15: validate the value against the device's declared schema
+		// before forwarding to the adapter/PropertyStore. If d.Capability
+		// isn't a valid name@version reference (only possible for a device
+		// registered before a CapabilityRegistry was configured — a
+		// currently-configured registry always enforces the format at
+		// RegisterDevice time), there's no schema to validate against, so
+		// skip rather than block an otherwise-legitimate write.
+		if name, version, ok := splitCapabilityRef(d.Capability); ok {
+			schema, err := s.capability.Get(name, version)
+			if err != nil {
+				return nil, capabilityRefStatusError(err)
+			}
+			if err := schema.ValidateProperty(req.GetPropertyPath(), v); err != nil {
+				return nil, capabilityRefStatusError(err)
+			}
+		}
+	}
 
 	if d.Transport == "mqtt" && s.mqtt != nil {
 		if err := s.mqtt.WriteProperty(ctx, req.GetDeviceId(), req.GetPropertyPath(), v); err != nil {

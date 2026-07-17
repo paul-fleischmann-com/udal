@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/paulefl/udal/code/gateway/internal/capability"
 	"go.etcd.io/bbolt"
@@ -69,6 +70,28 @@ func TestRegistry_PublishAndGet(t *testing.T) {
 			}
 			if got.Name != "widget" || got.Properties["level"].Type != "int" {
 				t.Errorf("Get = %+v", got)
+			}
+		})
+	}
+}
+
+func TestRegistry_PublishedAtIsSetAndPersisted(t *testing.T) {
+	for name, reg := range registries(t) {
+		t.Run(name, func(t *testing.T) {
+			before := time.Now()
+			published := mustPublish(t, reg, minimalSchema("widget", "1.0.0", `"level": {"type": "int"}`))
+			after := time.Now()
+
+			if published.PublishedAt.Before(before) || published.PublishedAt.After(after) {
+				t.Errorf("Publish's returned PublishedAt = %v, want between %v and %v", published.PublishedAt, before, after)
+			}
+
+			got, err := reg.Get("widget", "1.0.0")
+			if err != nil {
+				t.Fatalf("Get: %v", err)
+			}
+			if !got.PublishedAt.Equal(published.PublishedAt) {
+				t.Errorf("Get's PublishedAt = %v, want %v (from Publish)", got.PublishedAt, published.PublishedAt)
 			}
 		})
 	}

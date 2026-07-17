@@ -3,6 +3,7 @@ package capability
 import (
 	"fmt"
 	"sync"
+	"time"
 )
 
 // MemoryRegistry is a thread-safe in-memory Registry, used for tests.
@@ -36,6 +37,7 @@ func (r *MemoryRegistry) Publish(raw []byte) (Schema, error) {
 		warnIfBreaking(r.opts.log, latest, s)
 	}
 
+	s.PublishedAt = time.Now()
 	r.schemas[key] = s
 	return s, nil
 }
