@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Load/soak test harness (QR-02, `code/gateway/internal/adapters/mqtt/loadtest_test.go`,
+  build tag `loadtest`): simulates N MQTT devices publishing on an interval through one
+  real `Adapter` + `Broker` fan-out, then checks heap/CPU/goroutine usage against the
+  requirement's thresholds. Device count/publish interval/duration are env-var
+  configurable; a new manual-only (`workflow_dispatch`) CI job `go-loadtest` runs the
+  literal AC configuration (1,000 devices, 10s interval, 30 min) on demand — it's
+  intentionally not part of `ci-gate` since a 30-minute run is too slow to gate every
+  push/PR. Verified locally with the exact AC config: 11.3 MB heap, 0.4% CPU, goroutine
+  count flat throughout the full 30 minutes (2208 → 2208), clean teardown to baseline —
+  see `docs/features/plans/43-load-soak-test.md` for the full results. (#43)
 - Heartbeat-based device online/offline detection (F-04): a device silent for
   longer than `device_timeout` (default 90s) is automatically marked offline, and
   a `SubscribeResponse.status` event (new, additive proto field) is fanned out
