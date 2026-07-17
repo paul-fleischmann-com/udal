@@ -268,6 +268,10 @@
     // Adapters → external protocols
     { "from": "gateway.adapters.mqtt_adapter", "to": "mqtt_broker",  "label": "MQTT pub/sub",      "kind": "uses" },
     { "from": "gateway.adapters.can_adapter",  "to": "can_bus",      "label": "SocketCAN read/write","kind": "uses" },
+    // HTTP has no broker/bus in between — the adapter talks to each
+    // device's endpoint directly (issue #24)
+    { "from": "gateway.adapters.http_adapter", "to": "iot_device",   "label": "HTTPS poll (GET)",  "kind": "uses" },
+    { "from": "iot_device",  "to": "gateway.adapters.http_adapter",  "label": "webhook push (POST)","kind": "publishes" },
 
     // Adapter → Capability Registry (schema validation)
     { "from": "gateway.adapters.mqtt_adapter", "to": "gateway.capability_registry", "label": "validate schema", "kind": "reads" },
@@ -324,7 +328,7 @@
         "gateway.adapters.mqtt_adapter",
         "gateway.adapters.http_adapter",
         "gateway.adapters.can_adapter",
-        "mqtt_broker", "can_bus"
+        "mqtt_broker", "can_bus", "iot_device"
       ],
       "description": "Transport adapter detail view",
       "layout": "layered"
@@ -375,6 +379,33 @@
         { "index": 4, "from": "gateway.health",                    "to": "gateway.registry",              "label": "update last-seen",            "type": "async" },
         { "index": 5, "from": "gateway.router",                    "to": "gateway.api.grpc",              "label": "fan-out to subscribers",      "type": "async" },
         { "index": 6, "from": "gateway.api.grpc",                  "to": "client_app",                    "label": "PropertyEvent (stream)",      "type": "return" }
+      ]
+    },
+    {
+      "key": "http-property-read",
+      "title": "HTTP Property Read Flow",
+      "description": "Client reads a device property from an http-transport device (issue #24)",
+      "steps": [
+        { "index": 1, "from": "client_app",                        "to": "gateway.api.grpc",              "label": "GetProperty(deviceId, path)",      "type": "sync" },
+        { "index": 2, "from": "gateway.api.grpc",                  "to": "gateway.auth",                  "label": "authenticate + authorise",         "type": "sync" },
+        { "index": 3, "from": "gateway.auth",                      "to": "gateway.router",                "label": "forward",                          "type": "sync" },
+        { "index": 4, "from": "gateway.router",                    "to": "gateway.registry",              "label": "resolve transport config",         "type": "sync" },
+        { "index": 5, "from": "gateway.router",                    "to": "gateway.adapters.http_adapter", "label": "ReadProperty()",                   "type": "sync" },
+        { "index": 6, "from": "gateway.adapters.http_adapter",     "to": "iot_device",                    "label": "GET {endpoint}/properties/{path}", "type": "sync" },
+        { "index": 7, "from": "gateway.adapters.http_adapter",     "to": "gateway.router",                "label": "property value",                   "type": "return" },
+        { "index": 8, "from": "gateway.router",                    "to": "gateway.api.grpc",              "label": "value",                            "type": "return" },
+        { "index": 9, "from": "gateway.api.grpc",                  "to": "client_app",                    "label": "PropertyResponse",                 "type": "return" }
+      ]
+    },
+    {
+      "key": "http-webhook-push",
+      "title": "HTTP Webhook Push Flow",
+      "description": "Device pushes a property update ahead of its next scheduled poll; client receives it via streaming subscription (issue #24)",
+      "steps": [
+        { "index": 1, "from": "iot_device",                        "to": "gateway.adapters.http_adapter", "label": "POST /devices/{id}/events",   "type": "async" },
+        { "index": 2, "from": "gateway.adapters.http_adapter",     "to": "gateway.router",                "label": "PropertyEvent",               "type": "async" },
+        { "index": 3, "from": "gateway.router",                    "to": "gateway.api.grpc",              "label": "fan-out to subscribers",      "type": "async" },
+        { "index": 4, "from": "gateway.api.grpc",                  "to": "client_app",                    "label": "PropertyEvent (stream)",      "type": "return" }
       ]
     }
   ]
