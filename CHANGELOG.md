@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Capability Registry service (F-13/F-14/F-15): `CapabilityService` gRPC/REST API
+  (`PublishSchema`/`GetSchema`/`ListSchemas`) stores, versions, and serves capability
+  schemas (`code/gateway/internal/capability`), validated against the UDAL meta-schema
+  on publish (`INVALID_ARGUMENT` if non-conforming, `ALREADY_EXISTS` for a duplicate
+  `name@version` — schemas are immutable once published) and persisted across restarts
+  (bbolt, sharing the device registry's existing database file). Publishing a new
+  version of an existing schema within the same major version logs a warning if it
+  looks like it removed or retyped something the previous version declared (a
+  pragmatic heuristic, not exhaustive). `DeviceService` optionally enforces schemas
+  against devices — opt-in via `UDAL_CAPABILITY_ENFORCEMENT` (default off, so existing
+  deployments are unaffected): `RegisterDevice` rejects an unknown `name@version`
+  capability reference with `NOT_FOUND`, and `SetProperty` validates values against the
+  declared property type/range/enum with `INVALID_ARGUMENT`. New RBAC operations
+  (`PublishSchema`/`GetSchema`/`ListSchemas`) aren't in req42.adoc's F-19 table (predates
+  this service) — publish is admin/operator only, read is any non-device role, a
+  documented judgment call matching the existing `DeleteDevice` precedent. (#22)
 - Load/soak test harness (QR-02, `code/gateway/internal/adapters/mqtt/loadtest_test.go`,
   build tag `loadtest`): simulates N MQTT devices publishing on an interval through one
   real `Adapter` + `Broker` fan-out, then checks heap/CPU/goroutine usage against the
