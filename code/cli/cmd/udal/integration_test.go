@@ -65,7 +65,9 @@ func TestSchemaPublishGetList_AgainstRealGateway(t *testing.T) {
 
 	// ── publish: invalid schema → CLI surfaces the server's exact error ──
 	invalidPath := filepath.Join(t.TempDir(), "invalid.json")
-	os.WriteFile(invalidPath, []byte(`{"udal":"1.0","kind":"DeviceCapability"}`), 0o600) // missing required metadata
+	if err := os.WriteFile(invalidPath, []byte(`{"udal":"1.0","kind":"DeviceCapability"}`), 0o600); err != nil { // missing required metadata
+		t.Fatalf("write test schema: %v", err)
+	}
 	var stdout, cliStderr bytes.Buffer
 	code := cmdSchemaPublish(ctx, client, &stdout, &cliStderr, invalidPath)
 	if code != 1 {

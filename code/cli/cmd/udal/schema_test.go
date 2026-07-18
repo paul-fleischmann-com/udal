@@ -77,7 +77,9 @@ func TestCmdSchemaPublish_MissingFile(t *testing.T) {
 func TestCmdSchemaPublish_ServerErrorPassedThroughVerbatim(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "schema.json")
-	os.WriteFile(path, []byte(`{}`), 0o600)
+	if err := os.WriteFile(path, []byte(`{}`), 0o600); err != nil {
+		t.Fatalf("write test schema: %v", err)
+	}
 
 	serverErr := status.Error(codes.InvalidArgument, "capability: schema is invalid: metadata.name is required")
 	fake := &fakeCapabilityClient{publishErr: serverErr}
