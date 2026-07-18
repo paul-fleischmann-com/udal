@@ -7,13 +7,18 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.20.0
 	github.com/paulefl/udal/code/api/proto/gen v0.0.0
+	github.com/santhosh-tekuri/jsonschema/v5 v5.3.1
 	go.etcd.io/bbolt v1.4.3
 	golang.org/x/crypto v0.52.0
 	google.golang.org/grpc v1.79.3
 	google.golang.org/protobuf v1.36.10
+	gopkg.in/yaml.v3 v3.0.1
 )
 
-require golang.org/x/sync v0.20.0 // indirect
+require (
+	github.com/rogpeppe/go-internal v1.14.1 // indirect
+	golang.org/x/sync v0.20.0 // indirect
+)
 
 require (
 	github.com/eclipse/paho.golang v0.23.0

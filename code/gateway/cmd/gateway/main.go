@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"flag"
 	"log/slog"
 	"net"
 	"net/http"
@@ -16,9 +17,13 @@ import (
 
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	udalv1 "github.com/paulefl/udal/code/api/proto/gen/udal/v1"
+	httpadapter "github.com/paulefl/udal/code/gateway/internal/adapters/http"
 	mqttadapter "github.com/paulefl/udal/code/gateway/internal/adapters/mqtt"
 	"github.com/paulefl/udal/code/gateway/internal/api"
 	"github.com/paulefl/udal/code/gateway/internal/auth"
+	"github.com/paulefl/udal/code/gateway/internal/capability"
+	"github.com/paulefl/udal/code/gateway/internal/config"
+	"github.com/paulefl/udal/code/gateway/internal/heartbeat"
 	"github.com/paulefl/udal/code/gateway/internal/registry"
 	"github.com/paulefl/udal/code/gateway/internal/service"
 	"google.golang.org/grpc"
@@ -30,16 +35,37 @@ import (
 func main() {
 	log := slog.New(slog.NewTextHandler(os.Stdout, nil))
 
-	grpcAddr := envOr("UDAL_GRPC_ADDR", ":50051")
-	httpAddr := envOr("UDAL_HTTP_ADDR", ":8080")
-	registryPath := envOr("UDAL_REGISTRY_PATH", "./udal-registry.db")
-	tlsCertPath := os.Getenv("UDAL_TLS_CERT")
-	tlsKeyPath := os.Getenv("UDAL_TLS_KEY")
+	// ─── Config file (F-09/req42.adoc §7.2, issue #41) ────────────────────────
+	// A missing gateway.yaml is not an error — cfg stays zero-value, and every
+	// setting below resolves to exactly its pre-#41 default via
+	// config.ResolveString/ResolveAddr, so existing deployments with no config
+	// file and only the flat UDAL_* env vars are unaffected.
+	configFlag := flag.String("config", "", "path to gateway.yaml (default: $UDAL_CONFIG_PATH or ./gateway.yaml)")
+	flag.Parse()
+	configPath := *configFlag
+	if configPath == "" {
+		configPath = envOr("UDAL_CONFIG_PATH", "gateway.yaml")
+	}
+	cfg, err := config.Load(configPath)
+	if err != nil {
+		log.Error("load config file", "path", configPath, "err", err)
+		os.Exit(1)
+	}
+	if err := cfg.ApplyEnv(); err != nil {
+		log.Error("apply config env overrides", "err", err)
+		os.Exit(1)
+	}
+
+	grpcAddr := config.ResolveAddr(os.Getenv("UDAL_GRPC_ADDR"), cfg.Gateway.GRPCPort, 50051)
+	httpAddr := config.ResolveAddr(os.Getenv("UDAL_HTTP_ADDR"), cfg.Gateway.HTTPPort, 8080)
+	registryPath := config.ResolveString(os.Getenv("UDAL_REGISTRY_PATH"), cfg.Gateway.Registry.Path, "./udal-registry.db")
+	tlsCertPath := config.ResolveString(os.Getenv("UDAL_TLS_CERT"), cfg.Gateway.TLS.Cert, "")
+	tlsKeyPath := config.ResolveString(os.Getenv("UDAL_TLS_KEY"), cfg.Gateway.TLS.Key, "")
 	devInsecure := envOr("UDAL_DEV_INSECURE", "false") == "true"
-	mtlsCACertPath := os.Getenv("UDAL_MTLS_CA_CERT")
+	mtlsCACertPath := config.ResolveString(os.Getenv("UDAL_MTLS_CA_CERT"), cfg.Gateway.TLS.CA, "")
 	mtlsRequired := envOr("UDAL_MTLS_REQUIRED", "false") == "true"
 	bootstrapAPIKey := os.Getenv("UDAL_BOOTSTRAP_API_KEY")
-	jwksURL := os.Getenv("UDAL_JWT_JWKS_URL")
+	jwksURL := config.ResolveString(os.Getenv("UDAL_JWT_JWKS_URL"), cfg.Gateway.Auth.JWKSURL, "")
 	jwtAudience := os.Getenv("UDAL_JWT_AUDIENCE")
 	jwtIssuer := os.Getenv("UDAL_JWT_ISSUER")
 
@@ -60,12 +86,37 @@ func main() {
 	commands := api.NewCommandRouter()
 	svc := service.New(reg, props, broker, commands)
 
+	// ─── Capability Registry (F-13/F-14/F-15, issue #22) ──────────────────────
+	// CapabilityService (Publish/Get/List) is always available, so schemas
+	// can be published ahead of time — but enforcement (RegisterDevice/
+	// SetProperty validating against a device's declared schema) is opt-in
+	// via UDAL_CAPABILITY_ENFORCEMENT: turning it on unconditionally would
+	// make every RegisterDevice call require a pre-published schema,
+	// breaking any existing deployment whose devices don't have one yet.
+	capabilityReg, err := capability.NewBboltRegistry(reg.DB(), capability.WithLogger(log))
+	if err != nil {
+		log.Error("open capability registry", "err", err)
+		os.Exit(1)
+	}
+	capSvc := service.NewCapabilityService(capabilityReg)
+	if envOr("UDAL_CAPABILITY_ENFORCEMENT", "false") == "true" {
+		svc.SetCapabilityRegistry(capabilityReg)
+	}
+
+	// ─── Heartbeat / online status (F-04, issue #42) ──────────────────────────
+	presence := heartbeat.NewMonitor(reg, broker, time.Duration(cfg.Gateway.HeartbeatInterval), time.Duration(cfg.Gateway.DeviceTimeout))
+	svc.SetPresenceMonitor(presence)
+	presenceCtx, presenceCancel := context.WithCancel(context.Background())
+	go presence.Run(presenceCtx)
+
 	// ─── MQTT transport adapter (F-09) ────────────────────────────────────────
 	var mqttAdapter *mqttadapter.Adapter
-	if mqttBroker := os.Getenv("UDAL_MQTT_BROKER"); mqttBroker != "" {
+	if mqttBroker := config.ResolveString(os.Getenv("UDAL_MQTT_BROKER"), cfg.Gateway.Adapters.MQTT.Broker, ""); mqttBroker != "" {
 		mqttAdapter = mqttadapter.New(mqttBroker, func(deviceID, path string, v api.PropertyValue) {
 			broker.Publish(api.PropertyUpdate{DeviceID: deviceID, PropertyPath: path, Value: v, Timestamp: time.Now()})
-		}, mqttadapter.WithLogger(log))
+		}, mqttadapter.WithLogger(log), mqttadapter.WithOnHeartbeat(func(deviceID string) {
+			_ = presence.Touch(deviceID)
+		}))
 		if err := mqttAdapter.Connect(context.Background()); err != nil {
 			log.Error("connect to MQTT broker", "broker", mqttBroker, "err", err)
 			os.Exit(1)
@@ -84,6 +135,58 @@ func main() {
 			}
 		}
 	}
+
+	// ─── HTTP transport adapter (F-10, issue #24) ─────────────────────────────
+	// Unlike MQTT (gated behind a broker URL — there's no meaningful "off"
+	// switch otherwise), the HTTP adapter is always constructed: it has no
+	// global endpoint of its own, only per-device ones (Device.Labels, see
+	// package httpadapter's doc comment), so devices with transport=http just
+	// work without a separate opt-in.
+	httpClient := &http.Client{}
+	httpMTLSCert := config.ResolveString(os.Getenv("UDAL_HTTP_MTLS_CERT"), cfg.Gateway.Adapters.HTTP.MTLS.Cert, "")
+	if httpMTLSCert != "" {
+		httpMTLSKey := config.ResolveString(os.Getenv("UDAL_HTTP_MTLS_KEY"), cfg.Gateway.Adapters.HTTP.MTLS.Key, "")
+		cert, err := tls.LoadX509KeyPair(httpMTLSCert, httpMTLSKey)
+		if err != nil {
+			log.Error("load HTTP adapter mTLS client certificate", "cert", httpMTLSCert, "key", httpMTLSKey, "err", err)
+			os.Exit(1)
+		}
+		httpClient.Transport = &http.Transport{TLSClientConfig: &tls.Config{Certificates: []tls.Certificate{cert}}}
+		log.Info("HTTP adapter presenting client certificate to devices", "cert", httpMTLSCert)
+	}
+	httpAdapterOpts := []httpadapter.Option{httpadapter.WithHTTPClient(httpClient), httpadapter.WithLogger(log)}
+	if pollInterval := time.Duration(cfg.Gateway.Adapters.HTTP.PollInterval); pollInterval > 0 {
+		httpAdapterOpts = append(httpAdapterOpts, httpadapter.WithPollInterval(pollInterval))
+	}
+	httpAdapter := httpadapter.New(func(deviceID, path string, v api.PropertyValue) {
+		broker.Publish(api.PropertyUpdate{DeviceID: deviceID, PropertyPath: path, Value: v, Timestamp: time.Now()})
+	}, httpAdapterOpts...)
+	svc.SetHTTPAdapter(httpAdapter)
+
+	httpDevices, err := reg.List(registry.ListFilter{Transport: "http"})
+	if err != nil {
+		log.Error("list http devices", "err", err)
+		os.Exit(1)
+	}
+	for _, d := range httpDevices {
+		if err := httpAdapter.WatchDevice(context.Background(), d); err != nil {
+			log.Warn("watch http device", "device", d.ID, "err", err)
+		}
+	}
+
+	webhookAddr := config.ResolveAddr(os.Getenv("UDAL_HTTP_WEBHOOK_ADDR"), cfg.Gateway.Adapters.HTTP.WebhookPort, 8090)
+	webhookServer := &http.Server{
+		Addr:         webhookAddr,
+		Handler:      httpAdapter.Handler(),
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 10 * time.Second,
+	}
+	go func() {
+		log.Info("HTTP adapter webhook receiver listening", "addr", webhookAddr)
+		if err := webhookServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Error("HTTP webhook serve", "err", err)
+		}
+	}()
 
 	// ─── Auth (F-16/F-17/F-18/F-19/F-20) ──────────────────────────────────────
 	apiKeys, err := auth.NewAPIKeyStore(reg.DB())
@@ -202,6 +305,7 @@ func main() {
 
 	grpcServer := grpc.NewServer(serverOpts...)
 	udalv1.RegisterDeviceServiceServer(grpcServer, svc)
+	udalv1.RegisterCapabilityServiceServer(grpcServer, capSvc)
 	reflection.Register(grpcServer)
 
 	lis, err := net.Listen("tcp", grpcAddr)
@@ -237,6 +341,10 @@ func main() {
 
 	if err := udalv1.RegisterDeviceServiceHandlerFromEndpoint(ctx, mux, grpcAddr, opts); err != nil {
 		log.Error("register REST gateway", "err", err)
+		os.Exit(1)
+	}
+	if err := udalv1.RegisterCapabilityServiceHandlerFromEndpoint(ctx, mux, grpcAddr, opts); err != nil {
+		log.Error("register capability REST gateway", "err", err)
 		os.Exit(1)
 	}
 
@@ -279,6 +387,11 @@ func main() {
 			log.Error("MQTT disconnect", "err", err)
 		}
 	}
+	if err := webhookServer.Shutdown(shutCtx); err != nil {
+		log.Error("HTTP webhook shutdown", "err", err)
+	}
+	httpAdapter.Close()
+	presenceCancel()
 	log.Info("stopped")
 }
 

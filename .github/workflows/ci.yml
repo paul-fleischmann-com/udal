@@ -5,6 +5,9 @@ on:
     branches: ["**"]
   pull_request:
     branches: ["**"]
+  # Manual-only trigger for the load/soak test job below (issue #43) -- a
+  # 1,000-device/30-minute run is too slow to gate every push/PR.
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -160,6 +163,41 @@ jobs:
         run: go test -v -tags integration -timeout 120s ./code/gateway/...
         env:
           UDAL_TEST_MQTT_BROKER: tcp://localhost:1883
+
+# ─── Go: Load/Soak Test (1,000 devices, manual only) ──────────────────────────
+# Issue #43 (QR-02). Not part of ci-gate and not triggered by push/PR -- a
+# 1,000-device/30-minute run is too slow/expensive to gate every change.
+# Trigger manually via "Run workflow" (workflow_dispatch) when verifying
+# gateway resource usage under load, e.g. after touching the MQTT adapter,
+# Broker, or heartbeat code.
+  go-loadtest:
+    name: Go — Load/Soak Test (1000 devices)
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    services:
+      mosquitto:
+        image: eclipse-mosquitto:2
+        ports:
+          - 1883:1883
+        options: >-
+          --health-cmd "mosquitto_sub -h localhost -t test -C 1 --quiet &"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "stable"
+          cache: true
+
+      - name: Run load/soak test
+        run: go test -v -tags loadtest -timeout 35m -run TestLoadSoak_1000Devices ./code/gateway/internal/adapters/mqtt/...
+        env:
+          UDAL_TEST_MQTT_BROKER: tcp://localhost:1883
+          UDAL_LOADTEST_DEVICES: "1000"
+          UDAL_LOADTEST_PUBLISH_INTERVAL: 10s
+          UDAL_LOADTEST_DURATION: 30m
 
 # ─── Rust ─────────────────────────────────────────────────────────────────────
   rust-ci:
