@@ -241,6 +241,12 @@
           "title": "Reflex Dashboard",
           "description": "Reference web dashboard built with Python Reflex — device monitoring, property browser, live telemetry. Uses Python SDK internally, compiles to React.",
           "technology": "Python, Reflex"
+        },
+        "cli": {
+          "kind": "library",
+          "title": "CLI (udal)",
+          "description": "Operator command-line tool: publish/get/list capability schemas against CapabilityService (F-13, issue #23)",
+          "technology": "Go"
         }
       }
     }
@@ -290,6 +296,8 @@
     { "from": "sdks.sdk_typescript", "to": "gateway.api.rest",       "label": "REST / WebSocket",  "kind": "calls" },
     { "from": "sdks.dashboard",      "to": "sdks.sdk_python",        "label": "uses",              "kind": "uses" },
     { "from": "operator",            "to": "sdks.dashboard",         "label": "monitor devices",   "kind": "uses" },
+    { "from": "sdks.cli",            "to": "gateway.api.grpc",       "label": "gRPC",              "kind": "calls" },
+    { "from": "operator",            "to": "sdks.cli",               "label": "publish/get/list schemas", "kind": "uses" },
 
     // Operator
     { "from": "operator",            "to": "gateway.health",         "label": "monitor metrics",   "kind": "uses" }
