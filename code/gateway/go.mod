@@ -9,7 +9,7 @@ require (
 	github.com/paulefl/udal/code/api/proto/gen v0.0.0
 	github.com/santhosh-tekuri/jsonschema/v5 v5.3.1
 	go.etcd.io/bbolt v1.4.3
-	golang.org/x/crypto v0.51.0
+	golang.org/x/crypto v0.52.0
 	google.golang.org/grpc v1.79.3
 	google.golang.org/protobuf v1.36.10
 	gopkg.in/yaml.v3 v3.0.1
