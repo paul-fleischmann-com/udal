@@ -22,7 +22,7 @@ const testKID = "test-key-1"
 // tests to point a JWTValidator at.
 func jwksTestServer(t *testing.T, key *rsa.PrivateKey) *httptest.Server {
 	t.Helper()
-	n := base64.RawURLEncoding.EncodeToString(key.PublicKey.N.Bytes())
+	n := base64.RawURLEncoding.EncodeToString(key.N.Bytes())
 	e := base64.RawURLEncoding.EncodeToString(big.NewInt(int64(key.PublicKey.E)).Bytes())
 	body, err := json.Marshal(map[string]any{
 		"keys": []map[string]string{{"kty": "RSA", "kid": testKID, "n": n, "e": e}},

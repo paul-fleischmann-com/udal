@@ -47,7 +47,7 @@ func (a *Adapter) poll(ctx context.Context, deviceID, endpoint string, last map[
 		a.log.Warn("http: poll failed", "device", deviceID, "err", err)
 		return
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 400 {
 		a.log.Warn("http: poll returned error status", "device", deviceID, "status", resp.Status)
 		return
