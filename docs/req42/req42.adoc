@@ -688,11 +688,38 @@ a|
 | All log output is JSON with mandatory fields: `timestamp`, `level`, `component`, `trace_id`.
   Optional: `device_id`, `error`. Log level configurable at runtime.
 
+| Runtime Level Convention
+a|
+`UDAL_LOG_LEVEL` (`debug`\|`info`\|`warn`\|`error`, default `info`) sets the
+level a freshly-started gateway begins at. An already-running process can't
+observe a change to its own environment variables without being restarted
+— "without restart" is instead `PUT /debug/log-level` (body: one of the
+same four level names) on the metrics listener
+(`adapters.metrics_port`/`UDAL_METRICS_PORT`, default `9090`); `GET
+/debug/log-level` reads the current level back.
+
+| Trace ID Convention
+a|
+`trace_id` is generated per gRPC request (also covering REST, which
+grpc-gateway proxies through the same server) as 16 random bytes,
+hex-encoded — the W3C Trace Context / OpenTelemetry `TraceID` format, ahead
+of OpenTelemetry tracing itself (F-24/issue #29) actually being wired in.
+Any log call scoped to that request's `context.Context` (via the `*Context`
+`log/slog` methods) picks it up automatically; log calls with no request
+context (startup, background goroutines) have no `trace_id`, same as they'd
+have no active OTEL span once F-24 lands. **Interim, pending F-24:** there
+is no real OTEL span yet for the logged `trace_id` to match — F-24's own
+work only needs to replace the ID-generation call with the real span's
+`TraceID` (same format, same log key), not change anything downstream.
+
 | Acceptance Criteria
 a|
-- [ ] Every log line is valid JSON with all mandatory fields
-- [ ] `UDAL_LOG_LEVEL=debug` enables debug logs without restart
-- [ ] Request log line includes `trace_id` matching the OTEL span ID
+- [x] Every log line is valid JSON with all mandatory fields
+- [x] `UDAL_LOG_LEVEL=debug` enables debug logs without restart
+- [ ] Request log line includes `trace_id` matching the OTEL span ID —
+      `trace_id` is present on every request log line in OTEL's own ID
+      format, but there is no OTEL span to match until F-24 (issue #29) is
+      implemented; see Trace ID Convention above
 |===
 
 ==== F-24 — OpenTelemetry Tracing

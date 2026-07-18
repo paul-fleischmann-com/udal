@@ -25,6 +25,7 @@ import (
 	"github.com/paulefl/udal/code/gateway/internal/capability"
 	"github.com/paulefl/udal/code/gateway/internal/config"
 	"github.com/paulefl/udal/code/gateway/internal/heartbeat"
+	"github.com/paulefl/udal/code/gateway/internal/logging"
 	"github.com/paulefl/udal/code/gateway/internal/registry"
 	"github.com/paulefl/udal/code/gateway/internal/service"
 	"google.golang.org/grpc"
@@ -34,7 +35,24 @@ import (
 )
 
 func main() {
-	log := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	// ─── Structured JSON logging (F-23, issue #28) ────────────────────────────
+	// levelVar defaults to Info (its zero value) until UDAL_LOG_LEVEL is
+	// parsed below — built before that parse, not after, so a bad
+	// UDAL_LOG_LEVEL value can itself be logged (as JSON, at the default
+	// level) rather than needing some earlier bootstrap-only logger.
+	// baseLog carries no "component" attribute; every subsystem below
+	// derives its own via .With("component", "…") (mqtt_adapter,
+	// http_adapter, capability_registry, gateway.api, …) — log carries
+	// "component"="gateway" for main.go's own top-level messages.
+	levelVar := &slog.LevelVar{}
+	baseLog := slog.New(logging.NewHandler(os.Stdout, levelVar))
+	log := baseLog.With("component", "gateway")
+	if lvl, err := logging.ParseLevel(os.Getenv("UDAL_LOG_LEVEL")); err != nil {
+		log.Error("parse UDAL_LOG_LEVEL", "err", err)
+		os.Exit(1)
+	} else {
+		levelVar.Set(lvl)
+	}
 
 	// ─── Config file (F-09/req42.adoc §7.2, issue #41) ────────────────────────
 	// A missing gateway.yaml is not an error — cfg stays zero-value, and every
@@ -94,7 +112,7 @@ func main() {
 	// via UDAL_CAPABILITY_ENFORCEMENT: turning it on unconditionally would
 	// make every RegisterDevice call require a pre-published schema,
 	// breaking any existing deployment whose devices don't have one yet.
-	capabilityReg, err := capability.NewBboltRegistry(reg.DB(), capability.WithLogger(log))
+	capabilityReg, err := capability.NewBboltRegistry(reg.DB(), capability.WithLogger(baseLog.With("component", "capability_registry")))
 	if err != nil {
 		log.Error("open capability registry", "err", err)
 		os.Exit(1)
@@ -115,7 +133,7 @@ func main() {
 	if mqttBroker := config.ResolveString(os.Getenv("UDAL_MQTT_BROKER"), cfg.Gateway.Adapters.MQTT.Broker, ""); mqttBroker != "" {
 		mqttAdapter = mqttadapter.New(mqttBroker, func(deviceID, path string, v api.PropertyValue) {
 			broker.Publish(api.PropertyUpdate{DeviceID: deviceID, PropertyPath: path, Value: v, Timestamp: time.Now()})
-		}, mqttadapter.WithLogger(log), mqttadapter.WithOnHeartbeat(func(deviceID string) {
+		}, mqttadapter.WithLogger(baseLog.With("component", "mqtt_adapter")), mqttadapter.WithOnHeartbeat(func(deviceID string) {
 			_ = presence.Touch(deviceID)
 		}))
 		if err := mqttAdapter.Connect(context.Background()); err != nil {
@@ -155,7 +173,7 @@ func main() {
 		httpClient.Transport = &http.Transport{TLSClientConfig: &tls.Config{Certificates: []tls.Certificate{cert}}}
 		log.Info("HTTP adapter presenting client certificate to devices", "cert", httpMTLSCert)
 	}
-	httpAdapterOpts := []httpadapter.Option{httpadapter.WithHTTPClient(httpClient), httpadapter.WithLogger(log)}
+	httpAdapterOpts := []httpadapter.Option{httpadapter.WithHTTPClient(httpClient), httpadapter.WithLogger(baseLog.With("component", "http_adapter"))}
 	if pollInterval := time.Duration(cfg.Gateway.Adapters.HTTP.PollInterval); pollInterval > 0 {
 		httpAdapterOpts = append(httpAdapterOpts, httpadapter.WithPollInterval(pollInterval))
 	}
@@ -214,7 +232,7 @@ func main() {
 		}
 		canAdapterInst = canadapter.New(canDB, func(deviceID, path string, v api.PropertyValue) {
 			broker.Publish(api.PropertyUpdate{DeviceID: deviceID, PropertyPath: path, Value: v, Timestamp: time.Now()})
-		}, canadapter.WithLogger(log))
+		}, canadapter.WithLogger(baseLog.With("component", "can_adapter")))
 		if err := canAdapterInst.Open(canIface); err != nil {
 			log.Error("open CAN interface", "interface", canIface, "err", err)
 			os.Exit(1)
@@ -233,6 +251,29 @@ func main() {
 			}
 		}
 	}
+
+	// ─── Metrics/debug listener (issue #28) ───────────────────────────────────
+	// Currently hosts only /debug/log-level (F-23 AC: "UDAL_LOG_LEVEL=debug
+	// enables debug logs without restart" — see logging.LevelHandler's doc
+	// comment for why this endpoint, not literally re-reading the env var,
+	// is what makes that true). adapters.metrics_port/UDAL_METRICS_PORT has
+	// been a parsed-but-unused config stub since issue #41; issue #27 will
+	// add /health and /metrics to this same mux.
+	metricsAddr := config.ResolveAddr(os.Getenv("UDAL_METRICS_ADDR"), cfg.Gateway.MetricsPort, 9090)
+	metricsMux := http.NewServeMux()
+	metricsMux.Handle("/debug/log-level", logging.LevelHandler(levelVar))
+	metricsServer := &http.Server{
+		Addr:         metricsAddr,
+		Handler:      metricsMux,
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 10 * time.Second,
+	}
+	go func() {
+		log.Info("metrics/debug listener listening", "addr", metricsAddr)
+		if err := metricsServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Error("metrics/debug serve", "err", err)
+		}
+	}()
 
 	// ─── Auth (F-16/F-17/F-18/F-19/F-20) ──────────────────────────────────────
 	apiKeys, err := auth.NewAPIKeyStore(reg.DB())
@@ -271,10 +312,15 @@ func main() {
 	}
 	authenticator := &auth.Authenticator{APIKeys: apiKeys, JWT: jwtValidator}
 
+	// requestLogger runs first in the interceptor chain (before auth) so a
+	// request that fails authentication still gets a trace ID and a
+	// logged outcome (F-23 AC: "Request log line includes trace_id").
+	requestLogger := &logging.Interceptor{Log: baseLog.With("component", "gateway.api")}
+
 	// ─── gRPC server ─────────────────────────────────────────────────────────
 	serverOpts := []grpc.ServerOption{
-		grpc.ChainUnaryInterceptor(authenticator.UnaryInterceptor),
-		grpc.ChainStreamInterceptor(authenticator.StreamInterceptor),
+		grpc.ChainUnaryInterceptor(requestLogger.UnaryInterceptor, authenticator.UnaryInterceptor),
+		grpc.ChainStreamInterceptor(requestLogger.StreamInterceptor, authenticator.StreamInterceptor),
 	}
 	var dialCreds credentials.TransportCredentials
 	// tlsConfig is shared with the HTTP listener below (Server.TLSConfig) so
@@ -440,6 +486,9 @@ func main() {
 	}
 	if err := webhookServer.Shutdown(shutCtx); err != nil {
 		log.Error("HTTP webhook shutdown", "err", err)
+	}
+	if err := metricsServer.Shutdown(shutCtx); err != nil {
+		log.Error("metrics/debug shutdown", "err", err)
 	}
 	httpAdapter.Close()
 	presenceCancel()

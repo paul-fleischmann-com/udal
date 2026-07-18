@@ -459,9 +459,24 @@ volumes:
 
 === 8.2 Logging
 
-* Structured JSON logs via `log/slog` (Go 1.21+)
-* Fields: `timestamp`, `level`, `component`, `trace_id`, `device_id`, `error`
-* Log level configurable at runtime via `UDAL_LOG_LEVEL` env var
+* Structured JSON logs via `log/slog` (Go 1.21+, issue #28): `slog.NewJSONHandler`
+  with its default `time` key renamed to `timestamp`, wrapped so a `trace_id`
+  attribute is attached automatically to any log call made with a
+  request-scoped `context.Context` (a `contextHandler` reading it back out —
+  the documented `log/slog` pattern for context-carried attributes)
+* Fields: `timestamp`, `level`, `component`, `trace_id`, `device_id`, `error` —
+  `component` comes from a per-subsystem child logger
+  (`log.With("component", "mqtt_adapter")` etc., one per adapter/subsystem);
+  `trace_id` is present on request-scoped log lines only (see below)
+* `UDAL_LOG_LEVEL` (`debug`\|`info`\|`warn`\|`error`) sets the level a
+  freshly-started gateway begins at; `PUT /debug/log-level` on the metrics
+  listener changes it live, since a running process can't observe its own
+  environment changing without a restart
+* One JSON line logged per gRPC request (also covering REST, proxied through
+  the same server) by a `logging.Interceptor` running first in the chain,
+  before auth — carries a per-request `trace_id` (16 random bytes,
+  hex-encoded, OpenTelemetry `TraceID`-shaped ahead of F-24/issue #29 wiring
+  in a real OTEL span)
 
 === 8.3 Observability
 

@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Structured JSON logging (F-23, `code/gateway/internal/logging`): every log
+  line is now JSON (`slog.NewJSONHandler`, `time` renamed to `timestamp` per
+  spec) instead of the previous plain-text handler. `component` comes from a
+  per-subsystem child logger (`mqtt_adapter`, `http_adapter`,
+  `capability_registry`, `gateway.api`, `gateway` for main.go's own
+  top-level messages). A new `logging.Interceptor`, running first in the
+  gRPC interceptor chain (before auth, so even an auth failure gets logged
+  with a trace ID), generates a per-request `trace_id` (16 random bytes
+  hex-encoded — the OpenTelemetry `TraceID` format, ahead of OTEL tracing
+  itself, issue #29, actually being wired in) and logs one JSON line per
+  request; any handler-side log call scoped to that request's context picks
+  up the same `trace_id` automatically via a context-aware handler wrapper.
+  `UDAL_LOG_LEVEL` (`debug`/`info`/`warn`/`error`) sets the level a
+  freshly-started gateway begins at; a new `PUT /debug/log-level` endpoint
+  on the metrics listener (`adapters.metrics_port`/`UDAL_METRICS_PORT` —
+  parsed since #41, wired to a real listener for the first time here) is
+  the actual "without restart" mechanism, since a running process can't
+  observe its own environment changing without a restart. (#28)
 - CAN transport adapter (F-11, `code/gateway/internal/adapters/can`, Linux-only —
   `req42.adoc` TC-01): a shared read-loop goroutine per SocketCAN interface
   (`golang.org/x/sys/unix`, no new external dependency) decodes every incoming frame
