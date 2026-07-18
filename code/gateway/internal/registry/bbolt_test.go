@@ -17,7 +17,7 @@ func TestBboltRegisterGetRoundtrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewBboltRegistry: %v", err)
 	}
-	defer r.Close()
+	defer func() { _ = r.Close() }()
 
 	d := api.Device{
 		Name:       "sensor-1",
@@ -51,7 +51,7 @@ func TestBboltRegisterDuplicateID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewBboltRegistry: %v", err)
 	}
-	defer r.Close()
+	defer func() { _ = r.Close() }()
 
 	d := api.Device{ID: "fixed-id", Name: "cam", Capability: "ip-camera", Transport: "http"}
 	if _, err := r.Register(d); err != nil {
@@ -86,7 +86,7 @@ func TestBboltSurvivesRestart(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reopen NewBboltRegistry: %v", err)
 	}
-	defer r2.Close()
+	defer func() { _ = r2.Close() }()
 
 	got, err := r2.Get(d.ID)
 	if err != nil {
@@ -103,7 +103,7 @@ func TestBboltListFilters(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewBboltRegistry: %v", err)
 	}
-	defer r.Close()
+	defer func() { _ = r.Close() }()
 
 	c1, err := r.Register(api.Device{Name: "c1", Capability: "ip-camera", Transport: "http", Labels: map[string]string{"site": "hq"}})
 	if err != nil {
@@ -139,7 +139,7 @@ func TestBboltConcurrentAccess(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewBboltRegistry: %v", err)
 	}
-	defer r.Close()
+	defer func() { _ = r.Close() }()
 
 	const n = 50
 	var wg sync.WaitGroup
@@ -178,7 +178,7 @@ func TestBboltUpdateACL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewBboltRegistry: %v", err)
 	}
-	defer r.Close()
+	defer func() { _ = r.Close() }()
 
 	d, err := r.Register(api.Device{Name: "s", Capability: "temperature-sensor", Transport: "mqtt"})
 	if err != nil {
