@@ -17,6 +17,7 @@ import (
 
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	udalv1 "github.com/paulefl/udal/code/api/proto/gen/udal/v1"
+	canadapter "github.com/paulefl/udal/code/gateway/internal/adapters/can"
 	httpadapter "github.com/paulefl/udal/code/gateway/internal/adapters/http"
 	mqttadapter "github.com/paulefl/udal/code/gateway/internal/adapters/mqtt"
 	"github.com/paulefl/udal/code/gateway/internal/api"
@@ -187,6 +188,51 @@ func main() {
 			log.Error("HTTP webhook serve", "err", err)
 		}
 	}()
+
+	// ─── CAN transport adapter (F-11, issue #25) ──────────────────────────────
+	// Gated on UDAL_CAN_INTERFACE like MQTT's broker URL (there's no
+	// meaningful "off" switch otherwise), unlike HTTP: a can0/vcan0 interface
+	// either exists on the host or it doesn't, and req42.adoc TC-01 makes CAN
+	// unavailable at all on non-Linux dev machines.
+	var canAdapterInst *canadapter.Adapter
+	if canIface := config.ResolveString(os.Getenv("UDAL_CAN_INTERFACE"), cfg.Gateway.Adapters.CAN.Interface, ""); canIface != "" {
+		dbcPath := config.ResolveString(os.Getenv("UDAL_CAN_DBC_FILE"), cfg.Gateway.Adapters.CAN.DBCPath, "")
+		if dbcPath == "" {
+			log.Error("UDAL_CAN_DBC_FILE (or adapters.can.dbc_file) is required when the CAN adapter is enabled")
+			os.Exit(1)
+		}
+		dbcFile, err := os.Open(dbcPath)
+		if err != nil {
+			log.Error("open DBC file", "path", dbcPath, "err", err)
+			os.Exit(1)
+		}
+		canDB, err := canadapter.ParseDBC(dbcFile)
+		_ = dbcFile.Close()
+		if err != nil {
+			log.Error("parse DBC file", "path", dbcPath, "err", err)
+			os.Exit(1)
+		}
+		canAdapterInst = canadapter.New(canDB, func(deviceID, path string, v api.PropertyValue) {
+			broker.Publish(api.PropertyUpdate{DeviceID: deviceID, PropertyPath: path, Value: v, Timestamp: time.Now()})
+		}, canadapter.WithLogger(log))
+		if err := canAdapterInst.Open(canIface); err != nil {
+			log.Error("open CAN interface", "interface", canIface, "err", err)
+			os.Exit(1)
+		}
+		svc.SetCANAdapter(canAdapterInst)
+		log.Info("CAN adapter listening", "interface", canIface, "dbc", dbcPath)
+
+		canDevices, err := reg.List(registry.ListFilter{Transport: "can"})
+		if err != nil {
+			log.Error("list can devices", "err", err)
+			os.Exit(1)
+		}
+		for _, d := range canDevices {
+			if err := canAdapterInst.WatchDevice(context.Background(), d); err != nil {
+				log.Warn("watch can device", "device", d.ID, "err", err)
+			}
+		}
+	}
 
 	// ─── Auth (F-16/F-17/F-18/F-19/F-20) ──────────────────────────────────────
 	apiKeys, err := auth.NewAPIKeyStore(reg.DB())
@@ -385,6 +431,11 @@ func main() {
 	if mqttAdapter != nil {
 		if err := mqttAdapter.Disconnect(shutCtx); err != nil {
 			log.Error("MQTT disconnect", "err", err)
+		}
+	}
+	if canAdapterInst != nil {
+		if err := canAdapterInst.Close(); err != nil {
+			log.Error("CAN adapter close", "err", err)
 		}
 	}
 	if err := webhookServer.Shutdown(shutCtx); err != nil {

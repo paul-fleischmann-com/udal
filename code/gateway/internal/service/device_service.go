@@ -11,6 +11,7 @@ import (
 	"time"
 
 	udalv1 "github.com/paulefl/udal/code/api/proto/gen/udal/v1"
+	canadapter "github.com/paulefl/udal/code/gateway/internal/adapters/can"
 	httpadapter "github.com/paulefl/udal/code/gateway/internal/adapters/http"
 	mqttadapter "github.com/paulefl/udal/code/gateway/internal/adapters/mqtt"
 	"github.com/paulefl/udal/code/gateway/internal/api"
@@ -48,6 +49,22 @@ type HTTPAdapter interface {
 	WatchDevice(ctx context.Context, d api.Device) error
 }
 
+// CANAdapter is the subset of *canadapter.Adapter's API DeviceService needs
+// to route GetProperty/SetProperty for can-transport devices (issue #25).
+// Takes the full api.Device, like HTTPAdapter and unlike MQTTAdapter:
+// resolving a device to its DBC message needs Device.Labels (see
+// canadapter.LabelMessage), the CAN-bus equivalent of HTTP's per-device
+// endpoint label — a device's ID alone doesn't say which DBC message its
+// properties live in, since one DBC file/bus is shared by every device on
+// it. Unlike HTTPAdapter, WriteProperty is included: issue #25's
+// acceptance criteria explicitly list one ("WriteProperty: encodes value to
+// CAN frame, writes to SocketCAN interface"), unlike #24's HTTP adapter.
+type CANAdapter interface {
+	ReadProperty(ctx context.Context, d api.Device, path string) (api.PropertyValue, error)
+	WriteProperty(ctx context.Context, d api.Device, path string, v api.PropertyValue) error
+	WatchDevice(ctx context.Context, d api.Device) error
+}
+
 // PresenceMonitor is the subset of *heartbeat.Monitor's API DeviceService
 // needs (issue #42): Touch marks a device alive right now. RegisterDevice
 // touches on (re-)registration; StreamCommands touches once on connect and
@@ -70,14 +87,15 @@ type CapabilityRegistry interface {
 // DeviceService implements udalv1.DeviceServiceServer.
 // It delegates device registration to a Registry; property storage goes to
 // a PropertyStore for most devices, to an MQTTAdapter for devices whose
-// Transport is "mqtt" (if one is configured — see SetMQTTAdapter), or to an
+// Transport is "mqtt" (if one is configured — see SetMQTTAdapter), to an
 // HTTPAdapter for devices whose Transport is "http" (if one is configured —
-// see SetHTTPAdapter; GetProperty only, see HTTPAdapter's doc comment).
-// SendCommand is routed to a directly-connected gRPC device's
-// StreamCommands channel via commands, if one is open for that device;
-// SendCommand-over-MQTT/HTTP isn't in scope (no acceptance criterion
-// requires it for either transport), so it still returns Unimplemented for
-// those devices.
+// see SetHTTPAdapter; GetProperty only, see HTTPAdapter's doc comment), or
+// to a CANAdapter for devices whose Transport is "can" (if one is
+// configured — see SetCANAdapter). SendCommand is routed to a
+// directly-connected gRPC device's StreamCommands channel via commands, if
+// one is open for that device; SendCommand-over-MQTT/HTTP/CAN isn't in
+// scope (no acceptance criterion requires it for any of the three), so it
+// still returns Unimplemented for those devices.
 type DeviceService struct {
 	udalv1.UnimplementedDeviceServiceServer
 	reg        registry.Registry
@@ -86,6 +104,7 @@ type DeviceService struct {
 	commands   *api.CommandRouter
 	mqtt       MQTTAdapter
 	http       HTTPAdapter
+	can        CANAdapter
 	presence   PresenceMonitor
 	capability CapabilityRegistry
 }
@@ -110,6 +129,13 @@ func (s *DeviceService) SetMQTTAdapter(a MQTTAdapter) { s.mqtt = a }
 // before (http-transport devices fall through to PropertyStore, same as
 // any other transport).
 func (s *DeviceService) SetHTTPAdapter(a HTTPAdapter) { s.http = a }
+
+// SetCANAdapter wires a CANAdapter into the service so can-transport
+// devices' GetProperty/SetProperty route through it instead of the
+// in-memory PropertyStore. Optional — a DeviceService without one behaves
+// exactly as before (can-transport devices fall through to PropertyStore,
+// same as any other transport).
+func (s *DeviceService) SetCANAdapter(a CANAdapter) { s.can = a }
 
 // SetPresenceMonitor wires a PresenceMonitor into the service so
 // RegisterDevice and StreamCommands report device liveness to it (issue
@@ -202,6 +228,28 @@ func httpStatusError(err error) error {
 		return status.Errorf(codes.DeadlineExceeded, "%v", err)
 	}
 	return status.Errorf(codes.Internal, "%v", err)
+}
+
+// canStatusError maps a CANAdapter error to a gRPC status. Unknown-message/
+// unknown-signal/no-frame-yet are the CAN equivalent of "not found" (there
+// is no such addressable thing, or nothing has arrived for it yet); a
+// missing can.message label is a caller/config problem, so it maps like a
+// malformed request rather than a missing resource.
+func canStatusError(err error) error {
+	switch {
+	case errors.Is(err, canadapter.ErrUnknownMessage),
+		errors.Is(err, canadapter.ErrUnknownSignal),
+		errors.Is(err, canadapter.ErrNoFrameYet):
+		return status.Errorf(codes.NotFound, "can: %v", err)
+	case errors.Is(err, canadapter.ErrMissingLabel):
+		return status.Errorf(codes.InvalidArgument, "can: %v", err)
+	case errors.Is(err, canadapter.ErrNotOpen), errors.Is(err, canadapter.ErrLinuxOnly):
+		return status.Errorf(codes.Unavailable, "can: %v", err)
+	case errors.Is(err, context.DeadlineExceeded):
+		return status.Errorf(codes.DeadlineExceeded, "can: %v", err)
+	default:
+		return status.Errorf(codes.Internal, "can: %v", err)
+	}
 }
 
 // commandTimeout is F-07's "Command timeout (configurable, default 10 s)".
@@ -325,6 +373,15 @@ func (s *DeviceService) RegisterDevice(ctx context.Context, req *udalv1.Register
 		// surfaces that same error clearly on the next GetProperty call.
 		_ = s.http.WatchDevice(ctx, d)
 	}
+	if d.Transport == "can" && s.can != nil {
+		// Best-effort, same reasoning as the http branch above: a failure
+		// here (e.g. missing can.message label, or the label naming a
+		// message not in the loaded DBC file) only means this device isn't
+		// registered for OnPropertyUpdate fan-out yet — ReadProperty/
+		// WriteProperty still surface that same error clearly on the next
+		// call.
+		_ = s.can.WatchDevice(ctx, d)
+	}
 	if s.presence != nil {
 		// Marks the device online immediately on (re-)registration —
 		// covers "device reconnects -> online=true" (#42 AC3) for the
@@ -394,6 +451,11 @@ func (s *DeviceService) GetProperty(ctx context.Context, req *udalv1.GetProperty
 		v, err = s.http.ReadProperty(ctx, d, req.GetPropertyPath())
 		if err != nil {
 			return nil, httpStatusError(err)
+		}
+	case d.Transport == "can" && s.can != nil:
+		v, err = s.can.ReadProperty(ctx, d, req.GetPropertyPath())
+		if err != nil {
+			return nil, canStatusError(err)
 		}
 	default:
 		v, err = s.props.Get(req.GetDeviceId(), req.GetPropertyPath())
@@ -469,6 +531,19 @@ func (s *DeviceService) SetProperty(ctx context.Context, req *udalv1.SetProperty
 		// OnPropertyUpdate callback wired up in main.go — the /set/ack
 		// this call waited for only confirms receipt, not the device's
 		// authoritative new value.
+		_ = s.reg.UpdateStatus(req.GetDeviceId(), api.DeviceStatusOnline, time.Now())
+		pbVal, _ := toProtoValue(v)
+		return &udalv1.SetPropertyResponse{NewValue: pbVal}, nil
+	}
+
+	if d.Transport == "can" && s.can != nil {
+		if err := s.can.WriteProperty(ctx, d, req.GetPropertyPath(), v); err != nil {
+			return nil, canStatusError(err)
+		}
+		// No broker.Publish here, same reasoning as the mqtt branch above:
+		// WriteProperty already updates the adapter's own cache and fires
+		// OnPropertyUpdate (wired up in main.go) for the frame it just
+		// wrote, so Subscribe fan-out happens through that path, not here.
 		_ = s.reg.UpdateStatus(req.GetDeviceId(), api.DeviceStatusOnline, time.Now())
 		pbVal, _ := toProtoValue(v)
 		return &udalv1.SetPropertyResponse{NewValue: pbVal}, nil
