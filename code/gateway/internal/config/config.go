@@ -103,6 +103,12 @@ type HTTPMTLS struct {
 
 type CANAdapter struct {
 	Interface string `yaml:"interface"`
+	// DBCPath is the DBC file loaded at startup and cached in memory (issue
+	// #25 AC). Required for the CAN adapter to start once Interface is set
+	// — there's no sensible default (unlike HTTP's poll_interval or MQTT's
+	// client_id), so main.go treats "interface set, dbc_file empty" as a
+	// startup error rather than silently running with no signal map.
+	DBCPath string `yaml:"dbc_file"`
 }
 
 // Load reads and parses the YAML config file at path. A missing file is
@@ -185,6 +191,7 @@ func (c *Config) ApplyEnv() error {
 	overrideString(&c.Gateway.Adapters.HTTP.MTLS.Cert, "UDAL_HTTP_MTLS_CERT")
 	overrideString(&c.Gateway.Adapters.HTTP.MTLS.Key, "UDAL_HTTP_MTLS_KEY")
 	overrideString(&c.Gateway.Adapters.CAN.Interface, "UDAL_CAN_INTERFACE")
+	overrideString(&c.Gateway.Adapters.CAN.DBCPath, "UDAL_CAN_DBC_FILE")
 	if err := overrideDuration(&c.Gateway.HeartbeatInterval, "UDAL_HEARTBEAT_INTERVAL"); err != nil {
 		return err
 	}

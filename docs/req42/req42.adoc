@@ -382,14 +382,35 @@ a|
 | Reads and writes raw CAN frames via SocketCAN (Linux kernel interface).
   Decodes frames to typed property values using DBC files or YAML signal maps.
 
+| Message Convention
+a|
+A device's DBC message is its `can.message` label (`Device.Labels` — CAN has
+no per-device addressing to derive from an ID alone, unlike MQTT's topic
+convention: one DBC file/bus is shared by every device on it). `property_path`
+names a signal (`SG_`) within that message.
+
+[source]
+----
+Device.Labels["can.message"] = "EngineData"   ← a BO_ name in the DBC file
+GetProperty(deviceId, "EngineSpeed")          ← an SG_ name in that message
+----
+
+Unlike MQTT/HTTP, one shared read loop per interface decodes every frame
+matching a known DBC message ID as soon as it arrives, regardless of whether
+any device has been registered for it yet — ReadProperty always answers from
+that cache, never a live request (CAN has no request/response semantics for
+arbitrary signals). WriteProperty read-modify-writes the message's last-seen
+frame so writing one signal never clobbers a sibling signal sharing the same
+payload.
+
 | Acceptance Criteria
 a|
-- [ ] ReadProperty: returns decoded signal value from last received CAN frame with matching ID
-- [ ] WriteProperty: encodes value to CAN frame, writes to SocketCAN interface
-- [ ] DBC file loaded at startup; signal map cached in memory
-- [ ] Multiplexed signals correctly decoded (MUX support)
-- [ ] Tested against virtual CAN (`vcan0`) in CI
-- [ ] Decode latency < 1 µs per frame (benchmark)
+- [x] ReadProperty: returns decoded signal value from last received CAN frame with matching ID
+- [x] WriteProperty: encodes value to CAN frame, writes to SocketCAN interface
+- [x] DBC file loaded at startup; signal map cached in memory
+- [x] Multiplexed signals correctly decoded (MUX support)
+- [x] Tested against virtual CAN (`vcan0`) in CI
+- [x] Decode latency < 1 µs per frame (benchmark)
 |===
 
 ==== F-12 — Pluggable Adapter Interface
@@ -908,6 +929,7 @@ gateway:
       poll_interval: 5s
     can:
       interface: can0
+      dbc_file: /etc/udal/can/vehicle.dbc
   heartbeat_interval: 30s
   device_timeout: 90s
 ----

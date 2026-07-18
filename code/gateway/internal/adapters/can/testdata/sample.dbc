@@ -1,0 +1,22 @@
+VERSION ""
+
+NS_ :
+
+BS_:
+
+BU_: ECU Gateway
+
+BO_ 256 EngineData: 8 ECU
+ SG_ EngineSpeed : 0|16@1+ (0.25,0) [0|16383.75] "rpm" Gateway
+ SG_ EngineTemp : 16|8@1- (1,-40) [-40|215] "degC" Gateway
+
+BO_ 512 MuxedSensor: 8 ECU
+ SG_ SensorMux M : 0|8@1+ (1,0) [0|3] "" Gateway
+ SG_ SensorTempA m0 : 8|8@1- (1,-40) [-40|215] "degC" Gateway
+ SG_ SensorPressureB m1 : 8|16@1+ (0.1,0) [0|6553.5] "kPa" Gateway
+
+BO_ 768 MotorolaMsg: 8 ECU
+ SG_ BEValue : 7|12@0+ (1,0) [0|4095] "" Gateway
+
+BO_ 2147484160 ExtendedMsg: 4 ECU
+ SG_ Flag : 0|1@1+ (1,0) [0|1] "" Gateway

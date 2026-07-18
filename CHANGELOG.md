@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- CAN transport adapter (F-11, `code/gateway/internal/adapters/can`, Linux-only —
+  `req42.adoc` TC-01): a shared read-loop goroutine per SocketCAN interface
+  (`golang.org/x/sys/unix`, no new external dependency) decodes every incoming frame
+  matching a message in a DBC file loaded at startup (hand-rolled parser: `BO_`/`SG_`,
+  including multiplexed `M`/`m<N>` signals) into an in-memory cache. `GetProperty` for
+  `transport=can` devices answers from that cache — never a live bus request, since CAN
+  has no request/response semantics for an arbitrary signal — while `SetProperty`
+  encodes the value into the message's last-seen frame (read-modify-write, so sibling
+  signals sharing the payload survive) and writes it to the interface, unlike the HTTP
+  adapter's read-only scope (#24). A device's DBC message comes from its `can.message`
+  label (`Device.Labels`); `property_path` names a signal within it. Decode is
+  allocation-free on the per-frame hot path (`Message.DecodeEach`, ~200-300ns/frame,
+  comfortably under the 1µs/frame AC — profiling showed the map-returning `Decode`
+  convenience wrapper's own allocation, not the bit-extraction math, was the actual
+  cost). A panic while decoding one frame is recovered per-frame inside the read loop,
+  not just logged after the fact, so a single malformed frame can't take down the
+  gateway process. Integration-tested against a real `vcan0` interface in CI
+  (`go-integration-can` job — a runner step, not a Docker `services:` container, since
+  a virtual CAN interface is a kernel netdev, not a network service). (#25)
 - Capability Registry CLI (F-13, `code/cli/cmd/udal`, new module in `go.work`):
   `udal schema publish <file.json>` / `get <name>@<version>` / `list [<name>]` against a
   running gateway's `CapabilityService` (#22). `publish` does no local schema validation —

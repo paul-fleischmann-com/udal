@@ -35,6 +35,7 @@ gateway:
         key: /etc/udal/tls/http-client.key
     can:
       interface: can0
+      dbc_file: /etc/udal/can/vehicle.dbc
   heartbeat_interval: 30s
   device_timeout: 90s
 `
@@ -80,6 +81,9 @@ func TestLoad_FullSample(t *testing.T) {
 	}
 	if g.Adapters.CAN.Interface != "can0" {
 		t.Errorf("adapters.can.interface = %q, want can0", g.Adapters.CAN.Interface)
+	}
+	if g.Adapters.CAN.DBCPath != "/etc/udal/can/vehicle.dbc" {
+		t.Errorf("adapters.can.dbc_file = %q, want /etc/udal/can/vehicle.dbc", g.Adapters.CAN.DBCPath)
 	}
 	if time.Duration(g.HeartbeatInterval) != 30*time.Second {
 		t.Errorf("heartbeat_interval = %v, want 30s", time.Duration(g.HeartbeatInterval))
@@ -145,6 +149,7 @@ func TestApplyEnv_OverridesEverySettableField(t *testing.T) {
 		"UDAL_HTTP_MTLS_CERT":     "http-client-cert.pem",
 		"UDAL_HTTP_MTLS_KEY":      "http-client-key.pem",
 		"UDAL_CAN_INTERFACE":      "vcan0",
+		"UDAL_CAN_DBC_FILE":       "/tmp/vehicle.dbc",
 		"UDAL_HEARTBEAT_INTERVAL": "45s",
 		"UDAL_DEVICE_TIMEOUT":     "120s",
 	}
@@ -183,6 +188,9 @@ func TestApplyEnv_OverridesEverySettableField(t *testing.T) {
 	}
 	if g.Adapters.CAN.Interface != "vcan0" {
 		t.Errorf("adapters.can.interface = %q", g.Adapters.CAN.Interface)
+	}
+	if g.Adapters.CAN.DBCPath != "/tmp/vehicle.dbc" {
+		t.Errorf("adapters.can.dbc_file = %q", g.Adapters.CAN.DBCPath)
 	}
 	if time.Duration(g.HeartbeatInterval) != 45*time.Second || time.Duration(g.DeviceTimeout) != 120*time.Second {
 		t.Errorf("heartbeat_interval/device_timeout = %v/%v", time.Duration(g.HeartbeatInterval), time.Duration(g.DeviceTimeout))

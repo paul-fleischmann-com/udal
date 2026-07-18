@@ -178,6 +178,40 @@ jobs:
         env:
           UDAL_TEST_MQTT_BROKER: tcp://localhost:1883
 
+# ─── Go: Integration Tests (CAN via vcan0) ─────────────────────────────────────
+# Issue #25 AC: "Tested against virtual CAN (vcan0) in CI". vcan0 is a kernel
+# netdev, not a network service, so it can't reuse go-integration's Docker
+# `services:` pattern above — it's set up as a runner step instead, which
+# works because ubuntu-latest runs on a real Linux kernel (req42.adoc TC-01:
+# SocketCAN is Linux-only in the first place).
+  go-integration-can:
+    name: Go — Integration Tests (CAN)
+    needs: [go-build-test]
+    if: needs.changes.outputs.go == 'true' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "stable"
+          cache: true
+
+      - name: Set up vcan0
+        run: |
+          # The vcan module ships in linux-modules-extra-<kernel>, not the
+          # base ubuntu-latest runner image -- modprobe fails with "Module
+          # vcan not found" without it first.
+          sudo apt-get update
+          sudo apt-get install -y "linux-modules-extra-$(uname -r)"
+          sudo modprobe vcan
+          sudo ip link add dev vcan0 type vcan
+          sudo ip link set up vcan0
+
+      - name: Run integration tests
+        run: go test -v -tags integration -timeout 120s ./code/gateway/internal/adapters/can/...
+        env:
+          UDAL_TEST_CAN_INTERFACE: vcan0
+
 # ─── Go: Load/Soak Test (1,000 devices, manual only) ──────────────────────────
 # Issue #43 (QR-02). Not part of ci-gate and not triggered by push/PR -- a
 # 1,000-device/30-minute run is too slow/expensive to gate every change.
@@ -467,6 +501,7 @@ jobs:
       - go-lint
       - go-security
       - go-integration
+      - go-integration-can
       - rust-ci
       - python-ci
       - reflex-ci

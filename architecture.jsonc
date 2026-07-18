@@ -177,8 +177,8 @@
             "can_adapter": {
               "kind": "component",
               "title": "CAN Adapter",
-              "description": "Decodes/encodes CAN frames via SocketCAN using DBC or YAML signal maps",
-              "technology": "Go, go-socketcan"
+              "description": "Decodes/encodes CAN frames via SocketCAN using a DBC-file signal map (incl. multiplexed signals)",
+              "technology": "Go, golang.org/x/sys/unix (SocketCAN), hand-rolled DBC parser"
             }
           }
         },
@@ -414,6 +414,37 @@
         { "index": 2, "from": "gateway.adapters.http_adapter",     "to": "gateway.router",                "label": "PropertyEvent",               "type": "async" },
         { "index": 3, "from": "gateway.router",                    "to": "gateway.api.grpc",              "label": "fan-out to subscribers",      "type": "async" },
         { "index": 4, "from": "gateway.api.grpc",                  "to": "client_app",                    "label": "PropertyEvent (stream)",      "type": "return" }
+      ]
+    },
+    {
+      "key": "can-property-read",
+      "title": "CAN Property Read Flow",
+      "description": "Client reads a device property from a can-transport device; answered from the adapter's decoded-frame cache, not a live bus request (issue #25)",
+      "steps": [
+        { "index": 1, "from": "client_app",                        "to": "gateway.api.grpc",              "label": "GetProperty(deviceId, path)", "type": "sync" },
+        { "index": 2, "from": "gateway.api.grpc",                  "to": "gateway.auth",                  "label": "authenticate + authorise",    "type": "sync" },
+        { "index": 3, "from": "gateway.auth",                      "to": "gateway.router",                "label": "forward",                     "type": "sync" },
+        { "index": 4, "from": "gateway.router",                    "to": "gateway.registry",              "label": "resolve transport config",    "type": "sync" },
+        { "index": 5, "from": "gateway.router",                    "to": "gateway.adapters.can_adapter",  "label": "ReadProperty()",              "type": "sync" },
+        { "index": 6, "from": "gateway.adapters.can_adapter",      "to": "gateway.router",                "label": "cached decoded value",        "type": "return" },
+        { "index": 7, "from": "gateway.router",                    "to": "gateway.api.grpc",              "label": "value",                       "type": "return" },
+        { "index": 8, "from": "gateway.api.grpc",                  "to": "client_app",                    "label": "PropertyResponse",            "type": "return" }
+      ]
+    },
+    {
+      "key": "can-property-write",
+      "title": "CAN Property Write Flow",
+      "description": "Client writes a device property on a can-transport device; adapter encodes and writes a frame, then fans out the resulting value itself (issue #25)",
+      "steps": [
+        { "index": 1, "from": "client_app",                        "to": "gateway.api.grpc",              "label": "SetProperty(deviceId, path, value)", "type": "sync" },
+        { "index": 2, "from": "gateway.api.grpc",                  "to": "gateway.auth",                  "label": "authenticate + authorise",           "type": "sync" },
+        { "index": 3, "from": "gateway.auth",                      "to": "gateway.router",                "label": "forward",                            "type": "sync" },
+        { "index": 4, "from": "gateway.router",                    "to": "gateway.registry",              "label": "resolve transport config",           "type": "sync" },
+        { "index": 5, "from": "gateway.router",                    "to": "gateway.adapters.can_adapter",  "label": "WriteProperty()",                    "type": "sync" },
+        { "index": 6, "from": "gateway.adapters.can_adapter",      "to": "can_bus",                       "label": "encode + write frame",               "type": "sync" },
+        { "index": 7, "from": "gateway.adapters.can_adapter",      "to": "gateway.router",                "label": "fan-out to subscribers",             "type": "async" },
+        { "index": 8, "from": "gateway.router",                    "to": "gateway.api.grpc",              "label": "new value",                          "type": "return" },
+        { "index": 9, "from": "gateway.api.grpc",                  "to": "client_app",                    "label": "SetPropertyResponse",                "type": "return" }
       ]
     }
   ]

@@ -251,8 +251,8 @@ See `architecture.jsonc` view `context` for the diagram.
 | Transport implementation for HTTP poll + webhook
 
 | CAN Adapter
-| Go, go-socketcan
-| Transport implementation for SocketCAN; decodes CAN frames via signal map
+| Go, golang.org/x/sys/unix (SocketCAN), hand-rolled DBC parser
+| Transport implementation for SocketCAN; decodes CAN frames via DBC signal map (issue #25)
 
 | Device Registry
 | Go, bbolt
@@ -366,6 +366,43 @@ default 5 s — the poll loop follows the same fan-out path via its own
 . Router fans out event to all active `Subscribe` streams
 . Each subscribed client receives `PropertyEvent` over gRPC server-side stream
 
+=== 6.6 CAN Property Read (F-11, issue #25)
+
+See `architecture.jsonc` dynamic view `can-property-read` for the sequence
+diagram. Unlike §6.1/§6.4, step 4 onward isn't a live round trip at all: CAN
+is a broadcast bus with no request/response semantics for an arbitrary
+signal, so the CAN Adapter's read loop continuously decodes every frame
+matching a known DBC message ID into an in-memory cache (independently of
+any particular `GetProperty` call, potentially long before or after one),
+and `ReadProperty` simply answers from it.
+
+. Client calls `GetProperty(deviceId, "EngineSpeed")` via gRPC
+. Auth middleware validates credential and RBAC role
+. Router resolves device transport config from Device Registry
+. Router calls `ReadProperty()` on the CAN Adapter
+. CAN Adapter returns the signal's value from the last frame decoded for
+  that device's DBC message (no bus access on this call)
+. Value returned back through router → API → client
+
+=== 6.7 CAN Property Write (F-11, issue #25)
+
+See `architecture.jsonc` dynamic view `can-property-write` for the sequence
+diagram. Unlike HTTP (§6.4/§6.5, read-only) and like MQTT, CAN supports
+`WriteProperty` (issue #25's AC list, unlike #24's).
+
+. Client calls `SetProperty(deviceId, "EngineTemp", value)` via gRPC
+. Auth middleware validates credential and RBAC role
+. Router resolves device transport config from Device Registry
+. Router calls `WriteProperty()` on the CAN Adapter
+. CAN Adapter encodes the value into the message's last-seen frame
+  (read-modify-write, so sibling signals sharing the payload survive) and
+  writes it to the SocketCAN interface
+. CAN Adapter decodes its own just-written frame and fans out
+  `PropertyEvent` to subscribers of that device — no round trip to a
+  physical ECU is required to confirm the write, since the gateway itself
+  produced the frame
+. Router returns the new value back through API → client
+
 // ─────────────────────────────────────────────────────────────────────────────
 == 7. Deployment View
 
@@ -463,6 +500,7 @@ gateway:
         key:  /etc/udal/tls/http-adapter-client.key
     can:
       interface: can0
+      dbc_file: /etc/udal/can/vehicle.dbc
   heartbeat_interval: 30s
   device_timeout: 90s
 ----
@@ -551,7 +589,7 @@ See link:ADRs/[Architecture Decision Records] for all decisions:
 | CAN adapter panic brings down entire gateway (structured monolith)
 | Medium
 | High — all devices affected
-| recover() in adapter goroutine; circuit breaker; isolate CAN adapter in separate goroutine pool
+| recover() around each frame's decode in the adapter's own read-loop goroutine (issue #25) — one bus's malformed/unexpected frame can't crash the process. No circuit breaker: unlike MQTT there's no persistent request/response connection to protect (same reasoning as the HTTP adapter, #24) — the read loop just keeps draining the socket regardless of any one frame's outcome.
 
 | bbolt registry performance degrades with > 10,000 devices
 | Low (v1 scope: 1,000)
