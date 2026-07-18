@@ -28,7 +28,7 @@ func TestJWTValidator_StaleCacheFallsBackThenUnavailable(t *testing.T) {
 		t.Fatalf("generate key: %v", err)
 	}
 
-	n := base64.RawURLEncoding.EncodeToString(key.PublicKey.N.Bytes())
+	n := base64.RawURLEncoding.EncodeToString(key.N.Bytes())
 	e := base64.RawURLEncoding.EncodeToString(big.NewInt(int64(key.PublicKey.E)).Bytes())
 	body, err := json.Marshal(map[string]any{
 		"keys": []map[string]string{{"kty": "RSA", "kid": internalTestKID, "n": n, "e": e}},
