@@ -14,7 +14,7 @@ func benchDB(b *testing.B) *Database {
 	if err != nil {
 		b.Fatalf("open testdata: %v", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	db, err := ParseDBC(f)
 	if err != nil {
 		b.Fatalf("ParseDBC: %v", err)

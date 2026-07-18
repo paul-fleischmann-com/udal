@@ -11,7 +11,7 @@ func loadTestDB(t *testing.T) *Database {
 	if err != nil {
 		t.Fatalf("open testdata: %v", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	db, err := ParseDBC(f)
 	if err != nil {
 		t.Fatalf("ParseDBC: %v", err)

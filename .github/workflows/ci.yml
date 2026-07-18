@@ -198,6 +198,11 @@ jobs:
 
       - name: Set up vcan0
         run: |
+          # The vcan module ships in linux-modules-extra-<kernel>, not the
+          # base ubuntu-latest runner image -- modprobe fails with "Module
+          # vcan not found" without it first.
+          sudo apt-get update
+          sudo apt-get install -y "linux-modules-extra-$(uname -r)"
           sudo modprobe vcan
           sudo ip link add dev vcan0 type vcan
           sudo ip link set up vcan0
