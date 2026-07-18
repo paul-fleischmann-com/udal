@@ -431,6 +431,30 @@ a|
 - [ ] Publish duplicate `name@version` → rejected with `ALREADY_EXISTS`
 - [ ] Schema validated against UDAL meta-schema on publish → invalid schema rejected with `INVALID_ARGUMENT`
 - [ ] Schema persists across gateway restart
+
+| CLI (issue #23)
+a|
+`udal` (`code/cli/cmd/udal`), a thin gRPC client over `CapabilityService` —
+no schema logic of its own, so `publish` surfaces exactly the server's
+validation error instead of re-checking the document itself:
+
+[source]
+----
+udal schema publish <file.json>    publish a new schema version
+udal schema get <name>@<version>   fetch and print a published schema as JSON
+udal schema list [<name>]          list published versions, newest first
+----
+
+Connects via `-gateway` (default `localhost:50051`, env `UDAL_GATEWAY_ADDR`),
+`-api-key` (env `UDAL_API_KEY`), `-ca`/`-insecure` for TLS. No mTLS client
+cert or OAuth2/JWT support — an API key covers the described operator
+use case; see the plan doc for the scope decision.
+
+| CLI Acceptance Criteria
+a|
+- [x] `udal schema publish` rejects invalid schemas with the same error the gateway API would return
+- [x] `udal schema get name@version` prints the stored schema as JSON
+- [x] `udal schema list` shows all versions of a schema, newest first
 |===
 
 ==== F-14 — Schema Validation on Registration

@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Capability Registry CLI (F-13, `code/cli/cmd/udal`, new module in `go.work`):
+  `udal schema publish <file.json>` / `get <name>@<version>` / `list [<name>]` against a
+  running gateway's `CapabilityService` (#22). `publish` does no local schema validation —
+  it forwards the server's exact error (`INVALID_ARGUMENT`/`ALREADY_EXISTS` messages
+  included verbatim), since re-validating client-side would risk drifting from the meta-schema
+  logic in #22. `get` pretty-prints the stored document as JSON. `list` sorts newest-first
+  client-side, since `ListSchemas`/`capability.Registry.List` make no ordering guarantee.
+  Connects via `-gateway`/`-api-key`/`-ca`/`-insecure` (env `UDAL_GATEWAY_ADDR`/`UDAL_API_KEY`/
+  `UDAL_TLS_CA`/`UDAL_DEV_INSECURE`) — API-Key auth only, no CLI-side mTLS client cert or
+  OAuth2/JWT support (out of scope, see the plan doc). CI's Go build/test/lint/security/
+  integration jobs now also cover `code/cli/...` alongside `code/gateway/...`. (#23)
 - HTTP transport adapter (F-10, `code/gateway/internal/adapters/http`): `GetProperty`
   for `transport=http` devices issues a synchronous `GET {endpoint}/properties/{path}`
   against the device's `http.endpoint` label and decodes the JSON response; a

@@ -219,7 +219,7 @@ UDAL hides the protocol heterogeneity from client applications. Clients see one 
 The system consists of three top-level elements:
 
 * **UDAL Gateway** — central runtime (see §5.2)
-* **UDAL SDKs** — client and device libraries (Go, Rust, Python, TypeScript, Reflex)
+* **UDAL SDKs** — client and device libraries (Go, Rust, Python, TypeScript, Reflex), plus the operator CLI (`udal`)
 * **External Systems** — MQTT Broker, CAN Bus (operated outside UDAL)
 
 See `architecture.jsonc` view `context` for the diagram.
@@ -294,6 +294,10 @@ See `architecture.jsonc` view `gateway_internal` for the diagram.
 | Reflex Dashboard
 | Python Reflex
 | Reference web dashboard: device list, property browser, live telemetry
+
+| CLI (`udal`)
+| Go
+| Operator command-line tool: `schema publish/get/list` against CapabilityService (F-13, issue #23)
 |===
 
 // ─────────────────────────────────────────────────────────────────────────────
