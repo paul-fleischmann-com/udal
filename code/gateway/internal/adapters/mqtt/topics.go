@@ -50,6 +50,24 @@ func topicPropsWildcard(deviceID string) string { return fmt.Sprintf("udal/%s/pr
 func topicGet(deviceID, path string) string     { return topicProps(deviceID, path) + "/get" }
 func topicSet(deviceID, path string) string     { return topicProps(deviceID, path) + "/set" }
 func topicSetAck(deviceID, path string) string  { return topicSet(deviceID, path) + "/ack" }
+func topicStatus(deviceID string) string        { return fmt.Sprintf("udal/%s/status", deviceID) }
+
+// parseStatusTopic extracts deviceID from a device heartbeat topic
+// "udal/{deviceId}/status" (issue #42), rejecting anything else — notably
+// it's a sibling of "props/", not covered by the props/# wildcard
+// subscription, so it needs its own subscribe (see Adapter.WatchDevice)
+// and its own dispatch check.
+func parseStatusTopic(topic string) (deviceID string, ok bool) {
+	const prefix, suffix = "udal/", "/status"
+	if !strings.HasPrefix(topic, prefix) || !strings.HasSuffix(topic, suffix) {
+		return "", false
+	}
+	deviceID = topic[len(prefix) : len(topic)-len(suffix)]
+	if deviceID == "" || strings.Contains(deviceID, "/") {
+		return "", false
+	}
+	return deviceID, true
+}
 
 // parsePropsTopic extracts (deviceID, path) from a bare value-publish topic
 // "udal/{deviceId}/props/{path}", rejecting the reserved request/ack

@@ -340,13 +340,34 @@ a|
 | Poll-based property reads at configurable interval. Webhook receiver for push events.
   Supports mTLS for device authentication.
 
+| Endpoint Convention
+a|
+A device's base URL is its `http.endpoint` label (`Device.Labels` — HTTP has
+no broker to derive addressing from, unlike MQTT's topic convention). An
+optional `http.poll_interval` label (a Go duration string, e.g. `"10s"`)
+overrides the gateway-wide default for that device.
+
+[source]
+----
+GET  {endpoint}/properties/{path}   ← gateway polls one property (ReadProperty)
+GET  {endpoint}/properties          ← gateway polls the full snapshot (background poll loop)
+POST {webhook_addr}/devices/{deviceId}/events
+                                     ← device pushes one property update ahead
+                                       of its next scheduled poll
+----
+
+Property values on the wire (both directions): `{"bool"|"int"|"float"|
+"string"|"bytes": <value>}`, exactly one key set — independent of MQTT's own
+wire envelope (see F-09), since the two transports' device-side
+implementations don't need to agree on a shared format.
+
 | Acceptance Criteria
 a|
-- [ ] ReadProperty: polls device HTTP endpoint, parses JSON response to typed value
-- [ ] Subscribe: webhook receiver starts per-device listener; events forwarded to router
-- [ ] Poll interval configurable per device (default 5 s)
-- [ ] mTLS: gateway presents client cert to device when configured
-- [ ] HTTP errors (4xx/5xx) → mapped to appropriate gRPC status codes
+- [x] ReadProperty: polls device HTTP endpoint, parses JSON response to typed value
+- [x] Subscribe: webhook receiver starts per-device listener; events forwarded to router
+- [x] Poll interval configurable per device (default 5 s)
+- [x] mTLS: gateway presents client cert to device when configured
+- [x] HTTP errors (4xx/5xx) → mapped to appropriate gRPC status codes
 |===
 
 ==== F-11 — CAN Adapter (SocketCAN)
