@@ -374,7 +374,7 @@
       "description": "Device publishes a property update; client receives it via streaming subscription",
       "steps": [
         { "index": 1, "from": "iot_device",                        "to": "mqtt_broker",                   "label": "PUBLISH udal/{id}/props/temp", "type": "async" },
-        { "index": 2, "from": "gateway.adapters.mqtt_adapter",     "to": "mqtt_broker",                   "label": "SUBSCRIBE (receive)",         "type": "subscribes" },
+        { "index": 2, "from": "gateway.adapters.mqtt_adapter",     "to": "mqtt_broker",                   "label": "SUBSCRIBE (receive)",         "type": "async" },
         { "index": 3, "from": "gateway.adapters.mqtt_adapter",     "to": "gateway.router",                "label": "PropertyEvent",               "type": "async" },
         { "index": 4, "from": "gateway.health",                    "to": "gateway.registry",              "label": "update last-seen",            "type": "async" },
         { "index": 5, "from": "gateway.router",                    "to": "gateway.api.grpc",              "label": "fan-out to subscribers",      "type": "async" },
