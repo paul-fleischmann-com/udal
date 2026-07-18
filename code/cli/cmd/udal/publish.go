@@ -27,7 +27,7 @@ func runSchemaPublishCmd(args []string) int {
 		fmt.Fprintf(os.Stderr, "udal: connect to gateway: %v\n", err)
 		return 1
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	client := udalv1.NewCapabilityServiceClient(conn)
 	return cmdSchemaPublish(cf.authContext(context.Background()), client, os.Stdout, os.Stderr, fs.Arg(0))
@@ -41,14 +41,14 @@ func runSchemaPublishCmd(args []string) int {
 func cmdSchemaPublish(ctx context.Context, client udalv1.CapabilityServiceClient, stdout, stderr io.Writer, path string) int {
 	raw, err := os.ReadFile(path)
 	if err != nil {
-		fmt.Fprintf(stderr, "udal: read %s: %v\n", path, err)
+		_, _ = fmt.Fprintf(stderr, "udal: read %s: %v\n", path, err)
 		return 1
 	}
 	resp, err := client.PublishSchema(ctx, &udalv1.PublishSchemaRequest{Schema: raw})
 	if err != nil {
-		fmt.Fprintf(stderr, "udal: %s\n", grpcMessage(err))
+		_, _ = fmt.Fprintf(stderr, "udal: %s\n", grpcMessage(err))
 		return 1
 	}
-	fmt.Fprintf(stdout, "published %s@%s\n", resp.GetSchema().GetName(), resp.GetSchema().GetVersion())
+	_, _ = fmt.Fprintf(stdout, "published %s@%s\n", resp.GetSchema().GetName(), resp.GetSchema().GetVersion())
 	return 0
 }

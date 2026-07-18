@@ -59,7 +59,7 @@ func TestSchemaPublishGetList_AgainstRealGateway(t *testing.T) {
 
 	cf := &connectFlags{gateway: grpcAddr, insecure: true, apiKey: rawAPIKey}
 	conn := waitForDial(t, cf)
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	client := udalv1.NewCapabilityServiceClient(conn)
 	ctx := cf.authContext(context.Background())
 
@@ -159,7 +159,7 @@ func freeAddr(t *testing.T) string {
 		t.Fatalf("find a free port: %v", err)
 	}
 	addr := lis.Addr().String()
-	lis.Close()
+	_ = lis.Close()
 	return addr
 }
 
@@ -181,7 +181,7 @@ func waitForDial(t *testing.T, cf *connectFlags) *grpc.ClientConn {
 				return conn
 			}
 			lastErr = callErr
-			conn.Close()
+			_ = conn.Close()
 		} else {
 			lastErr = err
 		}

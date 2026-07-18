@@ -34,7 +34,7 @@ func runSchemaListCmd(args []string) int {
 		fmt.Fprintf(os.Stderr, "udal: connect to gateway: %v\n", err)
 		return 1
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	client := udalv1.NewCapabilityServiceClient(conn)
 	return cmdSchemaList(cf.authContext(context.Background()), client, os.Stdout, os.Stderr, name)
@@ -49,7 +49,7 @@ func runSchemaListCmd(args []string) int {
 func cmdSchemaList(ctx context.Context, client udalv1.CapabilityServiceClient, stdout, stderr io.Writer, name string) int {
 	resp, err := client.ListSchemas(ctx, &udalv1.ListSchemasRequest{Name: name})
 	if err != nil {
-		fmt.Fprintf(stderr, "udal: %s\n", grpcMessage(err))
+		_, _ = fmt.Fprintf(stderr, "udal: %s\n", grpcMessage(err))
 		return 1
 	}
 
@@ -59,16 +59,16 @@ func cmdSchemaList(ctx context.Context, client udalv1.CapabilityServiceClient, s
 	})
 
 	if len(schemas) == 0 {
-		fmt.Fprintln(stdout, "no schemas published")
+		_, _ = fmt.Fprintln(stdout, "no schemas published")
 		return 0
 	}
 	tw := tabwriter.NewWriter(stdout, 0, 4, 2, ' ', 0)
-	fmt.Fprintln(tw, "NAME\tVERSION\tPUBLISHED")
+	_, _ = fmt.Fprintln(tw, "NAME\tVERSION\tPUBLISHED")
 	for _, s := range schemas {
-		fmt.Fprintf(tw, "%s\t%s\t%s\n", s.GetName(), s.GetVersion(), s.GetPublishedAt().AsTime().Format(time.RFC3339))
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\n", s.GetName(), s.GetVersion(), s.GetPublishedAt().AsTime().Format(time.RFC3339))
 	}
 	if err := tw.Flush(); err != nil {
-		fmt.Fprintf(stderr, "udal: write output: %v\n", err)
+		_, _ = fmt.Fprintf(stderr, "udal: write output: %v\n", err)
 		return 1
 	}
 	return 0

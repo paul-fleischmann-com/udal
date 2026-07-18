@@ -157,7 +157,7 @@ func TestCmdSchemaList_SortsNewestFirst(t *testing.T) {
 	i120 := strings.Index(out, "1.2.0")
 	i110 := strings.Index(out, "1.1.0")
 	i100 := strings.Index(out, "1.0.0")
-	if !(i120 < i110 && i110 < i100) {
+	if i120 >= i110 || i110 >= i100 {
 		t.Errorf("expected newest-first order 1.2.0, 1.1.0, 1.0.0, got:\n%s", out)
 	}
 }

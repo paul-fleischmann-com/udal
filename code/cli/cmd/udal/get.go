@@ -30,7 +30,7 @@ func runSchemaGetCmd(args []string) int {
 		fmt.Fprintf(os.Stderr, "udal: connect to gateway: %v\n", err)
 		return 1
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	client := udalv1.NewCapabilityServiceClient(conn)
 	return cmdSchemaGet(cf.authContext(context.Background()), client, os.Stdout, os.Stderr, fs.Arg(0))
@@ -42,13 +42,13 @@ func runSchemaGetCmd(args []string) int {
 func cmdSchemaGet(ctx context.Context, client udalv1.CapabilityServiceClient, stdout, stderr io.Writer, ref string) int {
 	name, version, ok := strings.Cut(ref, "@")
 	if !ok || name == "" || version == "" {
-		fmt.Fprintf(stderr, "udal: %q is not a valid name@version reference\n", ref)
+		_, _ = fmt.Fprintf(stderr, "udal: %q is not a valid name@version reference\n", ref)
 		return 2
 	}
 
 	resp, err := client.GetSchema(ctx, &udalv1.GetSchemaRequest{Name: name, Version: version})
 	if err != nil {
-		fmt.Fprintf(stderr, "udal: %s\n", grpcMessage(err))
+		_, _ = fmt.Fprintf(stderr, "udal: %s\n", grpcMessage(err))
 		return 1
 	}
 
@@ -58,12 +58,12 @@ func cmdSchemaGet(ctx context.Context, client udalv1.CapabilityServiceClient, st
 		// Raw is always the exact document validated at publish time, so
 		// this shouldn't happen — but a formatting hiccup shouldn't hide
 		// the data itself.
-		fmt.Fprintf(stderr, "udal: warning: could not pretty-print schema: %v\n", err)
-		stdout.Write(raw)
-		fmt.Fprintln(stdout)
+		_, _ = fmt.Fprintf(stderr, "udal: warning: could not pretty-print schema: %v\n", err)
+		_, _ = stdout.Write(raw)
+		_, _ = fmt.Fprintln(stdout)
 		return 0
 	}
-	stdout.Write(pretty.Bytes())
-	fmt.Fprintln(stdout)
+	_, _ = stdout.Write(pretty.Bytes())
+	_, _ = fmt.Fprintln(stdout)
 	return 0
 }

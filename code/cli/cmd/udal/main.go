@@ -49,7 +49,7 @@ func runSchema(args []string) int {
 }
 
 func usage(w *os.File) {
-	fmt.Fprint(w, `usage: udal <command> [arguments]
+	_, _ = fmt.Fprint(w, `usage: udal <command> [arguments]
 
 commands:
   schema publish <file.json>   publish a new capability schema version
