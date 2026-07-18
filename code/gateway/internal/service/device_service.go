@@ -7,12 +7,15 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	udalv1 "github.com/paulefl/udal/code/api/proto/gen/udal/v1"
+	httpadapter "github.com/paulefl/udal/code/gateway/internal/adapters/http"
 	mqttadapter "github.com/paulefl/udal/code/gateway/internal/adapters/mqtt"
 	"github.com/paulefl/udal/code/gateway/internal/api"
 	"github.com/paulefl/udal/code/gateway/internal/auth"
+	"github.com/paulefl/udal/code/gateway/internal/capability"
 	"github.com/paulefl/udal/code/gateway/internal/registry"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -31,21 +34,60 @@ type MQTTAdapter interface {
 	WatchDevice(ctx context.Context, deviceID string) error
 }
 
+// HTTPAdapter is the subset of *httpadapter.Adapter's API DeviceService
+// needs to route GetProperty for http-transport devices (issue #24). Takes
+// the full api.Device rather than just its ID (unlike MQTTAdapter) because,
+// unlike MQTT's broker-relative topic convention, an HTTP device's base URL
+// isn't derivable from its ID alone — it lives in Device.Labels. No
+// WriteProperty: issue #24's acceptance criteria don't include one (see
+// package httpadapter's doc comment), so SetProperty for http-transport
+// devices still falls through to the in-memory PropertyStore, same as any
+// transport without an adapter configured.
+type HTTPAdapter interface {
+	ReadProperty(ctx context.Context, d api.Device, path string) (api.PropertyValue, error)
+	WatchDevice(ctx context.Context, d api.Device) error
+}
+
+// PresenceMonitor is the subset of *heartbeat.Monitor's API DeviceService
+// needs (issue #42): Touch marks a device alive right now. RegisterDevice
+// touches on (re-)registration; StreamCommands touches once on connect and
+// then on every tick of Interval for as long as the stream stays open —
+// treating an open direct-gRPC connection as its own continuous heartbeat,
+// since there's no per-message heartbeat protocol for that transport.
+type PresenceMonitor interface {
+	Touch(deviceID string) error
+	Interval() time.Duration
+}
+
+// CapabilityRegistry is the subset of *capability.Registry's API
+// DeviceService needs (issue #22): resolving a device's declared capability
+// ("name@version", see RegisterDevice) to validate it exists (F-14) and to
+// validate SetProperty values against its declared property types (F-15).
+type CapabilityRegistry interface {
+	Get(name, version string) (capability.Schema, error)
+}
+
 // DeviceService implements udalv1.DeviceServiceServer.
 // It delegates device registration to a Registry; property storage goes to
-// a PropertyStore for most devices, or to an MQTTAdapter for devices whose
-// Transport is "mqtt" (if one is configured — see SetMQTTAdapter). SendCommand
-// is routed to a directly-connected gRPC device's StreamCommands channel via
-// commands, if one is open for that device; SendCommand-over-MQTT isn't in
-// this ticket's scope (no acceptance criterion requires it), so it still
-// returns Unimplemented for mqtt-transport devices.
+// a PropertyStore for most devices, to an MQTTAdapter for devices whose
+// Transport is "mqtt" (if one is configured — see SetMQTTAdapter), or to an
+// HTTPAdapter for devices whose Transport is "http" (if one is configured —
+// see SetHTTPAdapter; GetProperty only, see HTTPAdapter's doc comment).
+// SendCommand is routed to a directly-connected gRPC device's
+// StreamCommands channel via commands, if one is open for that device;
+// SendCommand-over-MQTT/HTTP isn't in scope (no acceptance criterion
+// requires it for either transport), so it still returns Unimplemented for
+// those devices.
 type DeviceService struct {
 	udalv1.UnimplementedDeviceServiceServer
-	reg      registry.Registry
-	props    api.PropertyStore
-	broker   *api.Broker
-	commands *api.CommandRouter
-	mqtt     MQTTAdapter
+	reg        registry.Registry
+	props      api.PropertyStore
+	broker     *api.Broker
+	commands   *api.CommandRouter
+	mqtt       MQTTAdapter
+	http       HTTPAdapter
+	presence   PresenceMonitor
+	capability CapabilityRegistry
 }
 
 // New returns a DeviceService backed by the given Registry, PropertyStore,
@@ -62,6 +104,59 @@ func New(reg registry.Registry, props api.PropertyStore, broker *api.Broker, com
 // same as any other transport).
 func (s *DeviceService) SetMQTTAdapter(a MQTTAdapter) { s.mqtt = a }
 
+// SetHTTPAdapter wires an HTTPAdapter into the service so http-transport
+// devices' GetProperty routes through it instead of the in-memory
+// PropertyStore. Optional — a DeviceService without one behaves exactly as
+// before (http-transport devices fall through to PropertyStore, same as
+// any other transport).
+func (s *DeviceService) SetHTTPAdapter(a HTTPAdapter) { s.http = a }
+
+// SetPresenceMonitor wires a PresenceMonitor into the service so
+// RegisterDevice and StreamCommands report device liveness to it (issue
+// #42). Optional — without one, neither touches anything (no behavior
+// change from before this feature existed).
+func (s *DeviceService) SetPresenceMonitor(m PresenceMonitor) { s.presence = m }
+
+// SetCapabilityRegistry wires a CapabilityRegistry into the service so
+// RegisterDevice validates the declared capability schema exists (F-14) and
+// SetProperty validates values against it (F-15). Optional — a
+// DeviceService without one behaves exactly as before (no schema
+// enforcement at all), so existing devices/tests that register with an
+// arbitrary Capability string are unaffected unless this is configured.
+func (s *DeviceService) SetCapabilityRegistry(r CapabilityRegistry) { s.capability = r }
+
+// splitCapabilityRef splits a "name@version" capability reference. Devices
+// declare their capability this way once a CapabilityRegistry is
+// configured (see req42.adoc F-13: schemas are "retrievable by
+// name@version").
+func splitCapabilityRef(ref string) (name, version string, ok bool) {
+	name, version, ok = strings.Cut(ref, "@")
+	if !ok || name == "" || version == "" {
+		return "", "", false
+	}
+	return name, version, true
+}
+
+// capabilityRefStatusError maps a capability.Registry lookup/validation
+// error (from RegisterDevice/SetProperty resolving a device's declared
+// schema) to a gRPC status. Distinct from CapabilityService's own
+// capabilityStatusError (in capability_service.go, for its Publish/Get/List
+// RPCs) despite the overlapping error set — kept separate since the two
+// callers reach these errors through different code paths and one extra
+// case here (ErrPropertyNotDeclared) doesn't apply to the other at all.
+func capabilityRefStatusError(err error) error {
+	switch {
+	case errors.Is(err, capability.ErrNotFound):
+		return status.Errorf(codes.NotFound, "%v", err)
+	case errors.Is(err, capability.ErrPropertyNotDeclared):
+		return status.Errorf(codes.NotFound, "%v", err)
+	case errors.Is(err, capability.ErrInvalidPropertyValue):
+		return status.Errorf(codes.InvalidArgument, "%v", err)
+	default:
+		return status.Errorf(codes.Internal, "%v", err)
+	}
+}
+
 // mqttStatusError maps an MQTTAdapter error to a gRPC status.
 func mqttStatusError(err error) error {
 	switch {
@@ -74,6 +169,39 @@ func mqttStatusError(err error) error {
 	default:
 		return status.Errorf(codes.Internal, "mqtt: %v", err)
 	}
+}
+
+// httpStatusError maps an HTTPAdapter error to a gRPC status (req42.adoc
+// F-10: "HTTP errors (4xx/5xx) mapped to appropriate gRPC status codes").
+// A *httpadapter.StatusError carries the device's actual HTTP response
+// status; anything else (network failure, malformed body, missing
+// endpoint label) is a gateway-side/connectivity problem, not a device
+// response to translate, so it maps to Internal like mqttStatusError's
+// default case.
+func httpStatusError(err error) error {
+	var se *httpadapter.StatusError
+	if errors.As(err, &se) {
+		switch {
+		case se.StatusCode == 404:
+			return status.Errorf(codes.NotFound, "%v", err)
+		case se.StatusCode == 401:
+			return status.Errorf(codes.Unauthenticated, "%v", err)
+		case se.StatusCode == 403:
+			return status.Errorf(codes.PermissionDenied, "%v", err)
+		case se.StatusCode == 408:
+			return status.Errorf(codes.DeadlineExceeded, "%v", err)
+		case se.StatusCode == 429:
+			return status.Errorf(codes.ResourceExhausted, "%v", err)
+		case se.StatusCode >= 500:
+			return status.Errorf(codes.Unavailable, "%v", err)
+		default: // remaining 4xx
+			return status.Errorf(codes.InvalidArgument, "%v", err)
+		}
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return status.Errorf(codes.DeadlineExceeded, "%v", err)
+	}
+	return status.Errorf(codes.Internal, "%v", err)
 }
 
 // commandTimeout is F-07's "Command timeout (configurable, default 10 s)".
@@ -153,6 +281,18 @@ func (s *DeviceService) RegisterDevice(ctx context.Context, req *udalv1.Register
 	if err := s.authorizeNoDevice(ctx, auth.OpRegisterDevice); err != nil {
 		return nil, err
 	}
+	if s.capability != nil {
+		// F-14: reject registration if the declared capability schema
+		// doesn't exist. Devices reference a schema as "name@version" once
+		// a CapabilityRegistry is configured (see SetCapabilityRegistry).
+		name, version, ok := splitCapabilityRef(req.GetCapability())
+		if !ok {
+			return nil, status.Errorf(codes.NotFound, "capability %q is not a valid name@version reference", req.GetCapability())
+		}
+		if _, err := s.capability.Get(name, version); err != nil {
+			return nil, capabilityRefStatusError(err)
+		}
+	}
 	d, err := s.reg.Register(api.Device{
 		ID:         req.GetId(),
 		Name:       req.GetName(),
@@ -177,6 +317,26 @@ func (s *DeviceService) RegisterDevice(ctx context.Context, req *udalv1.Register
 		// such an ID would turn a per-device subscription into a
 		// broker-wide wildcard).
 		_ = s.mqtt.WatchDevice(ctx, d.ID)
+	}
+	if d.Transport == "http" && s.http != nil {
+		// Best-effort, same reasoning as the mqtt branch above: a failure
+		// here (e.g. missing http.endpoint label) only means this device's
+		// poll loop/webhook registration didn't start — ReadProperty still
+		// surfaces that same error clearly on the next GetProperty call.
+		_ = s.http.WatchDevice(ctx, d)
+	}
+	if s.presence != nil {
+		// Marks the device online immediately on (re-)registration —
+		// covers "device reconnects -> online=true" (#42 AC3) for the
+		// case of a device re-registering after a gateway/process
+		// restart, without waiting for its next heartbeat. Re-fetch so
+		// the response reflects the just-touched status rather than the
+		// pre-touch snapshot from Register.
+		if err := s.presence.Touch(d.ID); err == nil {
+			if touched, err := s.reg.Get(d.ID); err == nil {
+				d = touched
+			}
+		}
 	}
 	return &udalv1.RegisterDeviceResponse{Device: toProtoDevice(d)}, nil
 }
@@ -224,12 +384,18 @@ func (s *DeviceService) GetProperty(ctx context.Context, req *udalv1.GetProperty
 	}
 
 	var v api.PropertyValue
-	if d.Transport == "mqtt" && s.mqtt != nil {
+	switch {
+	case d.Transport == "mqtt" && s.mqtt != nil:
 		v, err = s.mqtt.ReadProperty(ctx, req.GetDeviceId(), req.GetPropertyPath())
 		if err != nil {
 			return nil, mqttStatusError(err)
 		}
-	} else {
+	case d.Transport == "http" && s.http != nil:
+		v, err = s.http.ReadProperty(ctx, d, req.GetPropertyPath())
+		if err != nil {
+			return nil, httpStatusError(err)
+		}
+	default:
 		v, err = s.props.Get(req.GetDeviceId(), req.GetPropertyPath())
 		if err != nil {
 			return nil, status.Errorf(codes.NotFound, "property %q not found on device %q", req.GetPropertyPath(), req.GetDeviceId())
@@ -260,6 +426,38 @@ func (s *DeviceService) SetProperty(ctx context.Context, req *udalv1.SetProperty
 		return nil, err
 	}
 	v := fromProtoValue(req.GetValue())
+
+	if s.capability != nil {
+		// F-15: validate the value against the device's declared schema
+		// before forwarding to the adapter/PropertyStore. If d.Capability
+		// isn't a valid name@version reference (only possible for a device
+		// registered before a CapabilityRegistry was configured — a
+		// currently-configured registry always enforces the format at
+		// RegisterDevice time), there's no schema to validate against, so
+		// skip rather than block an otherwise-legitimate write.
+		if name, version, ok := splitCapabilityRef(d.Capability); ok {
+			schema, err := s.capability.Get(name, version)
+			if err != nil {
+				return nil, capabilityRefStatusError(err)
+			}
+			if err := schema.ValidateProperty(req.GetPropertyPath(), v); err != nil {
+				return nil, capabilityRefStatusError(err)
+			}
+		}
+	}
+
+	if d.Transport == "http" && s.http != nil {
+		// Explicit Unimplemented rather than silently falling through to
+		// PropertyStore below: once an HTTPAdapter is configured,
+		// GetProperty for this device always polls it live (see
+		// GetProperty's switch) — a silent PropertyStore write here would
+		// be invisible to every subsequent read, which is worse than
+		// reporting plainly that writes aren't supported for this
+		// transport (issue #24's AC list has no WriteProperty, see
+		// package httpadapter's doc comment).
+		return nil, status.Errorf(codes.Unimplemented,
+			"device %q: SetProperty over HTTP is not supported", req.GetDeviceId())
+	}
 
 	if d.Transport == "mqtt" && s.mqtt != nil {
 		if err := s.mqtt.WriteProperty(ctx, req.GetDeviceId(), req.GetPropertyPath(), v); err != nil {
@@ -294,8 +492,9 @@ func (s *DeviceService) SetProperty(ctx context.Context, req *udalv1.SetProperty
 // ─── Streaming RPC ────────────────────────────────────────────────────────────
 
 // Subscribe streams PropertyUpdate events for a device until the client
-// disconnects. If req.PropertyPath is set, only events for that exact path
-// are forwarded; otherwise every property update for the device is sent.
+// disconnects. If req.PropertyPath is set, only property updates for that
+// exact path are forwarded; device online/offline status events (F-04 /
+// #42) are always forwarded regardless, since they aren't property-scoped.
 func (s *DeviceService) Subscribe(req *udalv1.SubscribeRequest, stream udalv1.DeviceService_SubscribeServer) error {
 	if req.GetDeviceId() == "" {
 		return status.Error(codes.InvalidArgument, "device_id is required")
@@ -323,20 +522,31 @@ func (s *DeviceService) Subscribe(req *udalv1.SubscribeRequest, stream udalv1.De
 			if !ok {
 				return nil
 			}
-			if req.GetPropertyPath() != "" && update.PropertyPath != req.GetPropertyPath() {
-				continue
+			var resp *udalv1.SubscribeResponse
+			if update.Status != nil {
+				// Status events (F-04 / #42) aren't scoped to a property
+				// path — always forwarded, unlike property updates below.
+				resp = &udalv1.SubscribeResponse{
+					DeviceId:  update.DeviceID,
+					Status:    toProtoDeviceStatus(*update.Status),
+					Timestamp: timestamppb.New(update.Timestamp),
+				}
+			} else {
+				if req.GetPropertyPath() != "" && update.PropertyPath != req.GetPropertyPath() {
+					continue
+				}
+				pbVal, err := toProtoValue(update.Value)
+				if err != nil {
+					continue
+				}
+				resp = &udalv1.SubscribeResponse{
+					DeviceId:     update.DeviceID,
+					PropertyPath: update.PropertyPath,
+					Value:        pbVal,
+					Timestamp:    timestamppb.New(update.Timestamp),
+				}
 			}
-			pbVal, err := toProtoValue(update.Value)
-			if err != nil {
-				continue
-			}
-			err = stream.Send(&udalv1.SubscribeResponse{
-				DeviceId:     update.DeviceID,
-				PropertyPath: update.PropertyPath,
-				Value:        pbVal,
-				Timestamp:    timestamppb.New(update.Timestamp),
-			})
-			if err != nil {
+			if err := stream.Send(resp); err != nil {
 				return err
 			}
 		}
@@ -418,6 +628,25 @@ func (s *DeviceService) StreamCommands(stream udalv1.DeviceService_StreamCommand
 	commands, unregister := s.commands.Register(deviceID)
 	defer unregister()
 
+	// An open StreamCommands connection is itself a continuous liveness
+	// signal (#42): touch presence now and on every tick thereafter, for
+	// as long as the stream stays open, so a device with no in-flight
+	// commands doesn't get incorrectly timed out. heartbeatTick stays nil
+	// (blocks forever, never selected below) if no PresenceMonitor is
+	// configured, or if one is but reports a non-positive interval --
+	// time.NewTicker panics on <= 0, and a single misbehaving
+	// PresenceMonitor implementation shouldn't be able to crash every
+	// connected device's StreamCommands handler.
+	var heartbeatTick <-chan time.Time
+	if s.presence != nil {
+		_ = s.presence.Touch(deviceID)
+		if interval := s.presence.Interval(); interval > 0 {
+			ticker := time.NewTicker(interval)
+			defer ticker.Stop()
+			heartbeatTick = ticker.C
+		}
+	}
+
 	recvErr := make(chan error, 1)
 	go func() {
 		for {
@@ -444,6 +673,8 @@ func (s *DeviceService) StreamCommands(stream udalv1.DeviceService_StreamCommand
 				return nil
 			}
 			return err
+		case <-heartbeatTick:
+			_ = s.presence.Touch(deviceID)
 		case cmd, ok := <-commands:
 			if !ok {
 				return nil
@@ -472,19 +703,23 @@ func toProtoDevice(d api.Device) *udalv1.Device {
 		Capability: d.Capability,
 		Transport:  d.Transport,
 		Labels:     d.Labels,
-	}
-	switch d.Status {
-	case api.DeviceStatusOnline:
-		pb.Status = udalv1.DeviceStatus_DEVICE_STATUS_ONLINE
-	case api.DeviceStatusOffline:
-		pb.Status = udalv1.DeviceStatus_DEVICE_STATUS_OFFLINE
-	default:
-		pb.Status = udalv1.DeviceStatus_DEVICE_STATUS_UNKNOWN
+		Status:     toProtoDeviceStatus(d.Status),
 	}
 	if !d.LastSeen.IsZero() {
 		pb.LastSeen = timestamppb.New(d.LastSeen)
 	}
 	return pb
+}
+
+func toProtoDeviceStatus(s api.DeviceStatus) udalv1.DeviceStatus {
+	switch s {
+	case api.DeviceStatusOnline:
+		return udalv1.DeviceStatus_DEVICE_STATUS_ONLINE
+	case api.DeviceStatusOffline:
+		return udalv1.DeviceStatus_DEVICE_STATUS_OFFLINE
+	default:
+		return udalv1.DeviceStatus_DEVICE_STATUS_UNKNOWN
+	}
 }
 
 func toProtoValue(v api.PropertyValue) (*udalv1.PropertyValue, error) {

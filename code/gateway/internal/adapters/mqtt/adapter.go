@@ -22,6 +22,12 @@ const defaultRequestTimeout = 5 * time.Second
 // so the gateway can fan it out via api.Broker (Subscribe RPC).
 type OnPropertyUpdate func(deviceID, propertyPath string, v api.PropertyValue)
 
+// OnHeartbeat is called whenever a message arrives on a watched device's
+// heartbeat topic (udal/{deviceId}/status, issue #42's device-side
+// heartbeat channel) — the payload itself isn't inspected, only that a
+// message arrived at all.
+type OnHeartbeat func(deviceID string)
+
 // Adapter is the MQTT transport adapter (req42.adoc F-09). It connects to
 // one broker (v5, falling back to v3.1.1 — see Connect) and implements a
 // request/response pattern over the topic convention documented in
@@ -31,6 +37,7 @@ type Adapter struct {
 	brokerURL      string
 	requestTimeout time.Duration
 	onUpdate       OnPropertyUpdate
+	onHeartbeat    OnHeartbeat
 	log            *slog.Logger
 
 	mu         sync.Mutex
@@ -61,6 +68,14 @@ func WithRequestTimeout(d time.Duration) Option {
 // WithLogger overrides the Adapter's logger (default: slog.Default()).
 func WithLogger(log *slog.Logger) Option {
 	return func(a *Adapter) { a.log = log }
+}
+
+// WithOnHeartbeat sets the callback invoked whenever a watched device
+// publishes to its heartbeat topic (issue #42). Without this option,
+// heartbeat messages are still subscribed to (as part of WatchDevice) but
+// silently discarded.
+func WithOnHeartbeat(fn OnHeartbeat) Option {
+	return func(a *Adapter) { a.onHeartbeat = fn }
 }
 
 // New returns an Adapter for brokerURL (e.g. "mqtt://localhost:1883").
@@ -124,7 +139,12 @@ func (a *Adapter) WatchDevice(ctx context.Context, deviceID string) error {
 	if err := validTopicSegment(deviceID); err != nil {
 		return err
 	}
-	return a.subscribeOnce(ctx, topicPropsWildcard(deviceID))
+	if err := a.subscribeOnce(ctx, topicPropsWildcard(deviceID)); err != nil {
+		return err
+	}
+	// The heartbeat topic (issue #42) is a sibling of props/, not covered
+	// by the props/# wildcard above, so it needs its own subscription.
+	return a.subscribeOnce(ctx, topicStatus(deviceID))
 }
 
 // subscribeOnce issues an MQTT SUBSCRIBE for topic, unless it's already
@@ -208,6 +228,9 @@ func (a *Adapter) dispatch(topic string, payload []byte) {
 
 	deviceID, path, ok := parsePropsTopic(topic)
 	if !ok {
+		if heartbeatDeviceID, isHeartbeat := parseStatusTopic(topic); isHeartbeat && a.onHeartbeat != nil {
+			a.onHeartbeat(heartbeatDeviceID)
+		}
 		return
 	}
 	v, err := decodeValue(payload)

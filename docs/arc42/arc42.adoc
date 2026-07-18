@@ -332,6 +332,36 @@ See `architecture.jsonc` dynamic view `telemetry-publish` for the sequence diagr
 . Router fans out event to all active `Subscribe` streams
 . Each subscribed client receives `PropertyEvent` over gRPC server-side stream
 
+=== 6.4 HTTP Property Read (F-10, issue #24)
+
+See `architecture.jsonc` dynamic view `http-property-read` for the sequence
+diagram. Same shape as §6.1, except step 4 onward: the HTTP Adapter has no
+persistent connection or broker to reuse, so every `ReadProperty` is a
+synchronous round trip against the device itself.
+
+. Client calls `GetProperty(deviceId, "temperature")` via gRPC
+. Auth middleware validates credential and RBAC role
+. Router resolves device transport config from Device Registry
+. Router calls `ReadProperty()` on the HTTP Adapter
+. HTTP Adapter issues `GET {endpoint}/properties/temperature` against the
+  device's `http.endpoint` label (timeout: 5 s)
+. Value returned back through router → API → client
+
+=== 6.5 HTTP Webhook Push (F-10, issue #24)
+
+See `architecture.jsonc` dynamic view `http-webhook-push` for the sequence
+diagram. Complements §6.4: a device can push a value ahead of the HTTP
+Adapter's own background poll loop (poll interval configurable per device,
+default 5 s — the poll loop follows the same fan-out path via its own
+`PropertyEvent` call, not shown as a separate diagram).
+
+. Device `POST`s to `{webhook_addr}/devices/{deviceId}/events` with
+  `{"path": "temperature", "value": {...}}`
+. HTTP Adapter validates the device is watched (`WatchDevice` was called at
+  registration); forwards `PropertyEvent` to Router
+. Router fans out event to all active `Subscribe` streams
+. Each subscribed client receives `PropertyEvent` over gRPC server-side stream
+
 // ─────────────────────────────────────────────────────────────────────────────
 == 7. Deployment View
 
@@ -423,6 +453,10 @@ gateway:
       client_id: udal-gateway
     http:
       poll_interval: 5s
+      webhook_port: 8090
+      mtls:
+        cert: /etc/udal/tls/http-adapter-client.crt
+        key:  /etc/udal/tls/http-adapter-client.key
     can:
       interface: can0
   heartbeat_interval: 30s

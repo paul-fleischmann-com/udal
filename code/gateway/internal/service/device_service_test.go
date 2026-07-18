@@ -541,3 +541,52 @@ func TestSubscribe_FiltersByPropertyPath(t *testing.T) {
 		t.Errorf("expected exactly one humidity event, got %+v", got)
 	}
 }
+
+func TestSubscribe_StatusEventsIgnorePropertyPathFilter(t *testing.T) {
+	broker := api.NewBroker()
+	svc := service.New(registry.NewMemoryRegistry(), api.NewMemoryPropertyStore(), broker, api.NewCommandRouter())
+	dev, err := svc.RegisterDevice(adminCtx(), &udalv1.RegisterDeviceRequest{
+		Name: "s", Capability: "temperature-sensor", Transport: "mqtt",
+	})
+	if err != nil {
+		t.Fatalf("RegisterDevice: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(adminCtx())
+	// A property_path filter is set, matching neither this test's status
+	// event nor any property at all — status events must be forwarded
+	// regardless, since they're not property-scoped.
+	stream := &fakeSubscribeStream{ctx: ctx}
+
+	done := make(chan error, 1)
+	go func() {
+		done <- svc.Subscribe(&udalv1.SubscribeRequest{DeviceId: dev.GetDevice().GetId(), PropertyPath: "temperature"}, stream)
+	}()
+	time.Sleep(50 * time.Millisecond)
+
+	offline := api.DeviceStatusOffline
+	broker.Publish(api.PropertyUpdate{DeviceID: dev.GetDevice().GetId(), Status: &offline, Timestamp: time.Now()})
+
+	deadline := time.After(time.Second)
+	for len(stream.sent()) == 0 {
+		select {
+		case <-deadline:
+			t.Fatal("timed out waiting for the status event")
+		default:
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+	cancel()
+	<-done
+
+	got := stream.sent()
+	if len(got) != 1 {
+		t.Fatalf("expected exactly one event, got %+v", got)
+	}
+	if got[0].GetStatus() != udalv1.DeviceStatus_DEVICE_STATUS_OFFLINE {
+		t.Errorf("Status = %v, want DEVICE_STATUS_OFFLINE", got[0].GetStatus())
+	}
+	if got[0].GetPropertyPath() != "" {
+		t.Errorf("status event should not carry a property_path, got %q", got[0].GetPropertyPath())
+	}
+}

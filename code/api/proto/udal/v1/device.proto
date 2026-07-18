@@ -168,12 +168,18 @@ message SubscribeRequest {
   string device_id     = 1;
   string property_path = 2;  // empty = subscribe to all properties
 }
-// SubscribeResponse is one streamed event from the Subscribe RPC.
+// SubscribeResponse is one streamed event from the Subscribe RPC: either a
+// property value update (property_path/value set, status unset) or a
+// device online/offline transition (status set to something other than
+// DEVICE_STATUS_UNSPECIFIED; property_path/value unset) — see F-04 /
+// GitHub issue #42. A single stream carries both kinds so Subscribe's
+// existing fan-out mechanism didn't need a second RPC.
 message SubscribeResponse {
   string                    device_id     = 1;
   string                    property_path = 2;
   PropertyValue             value         = 3;
   google.protobuf.Timestamp timestamp     = 4;
+  DeviceStatus              status        = 5;
 }
 
 // Command is one command dispatched to a device via StreamCommands, in
