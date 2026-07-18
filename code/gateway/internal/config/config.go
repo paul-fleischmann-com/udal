@@ -35,9 +35,11 @@ func (d *Duration) UnmarshalYAML(unmarshal func(any) error) error {
 
 // Config mirrors req42.adoc §7.2's gateway.yaml schema. Not every field is
 // consumed by the gateway yet — see docs/features/plans/41-yaml-config.md
-// for which ones and why (metrics_port, auth.api_key_header,
-// adapters.mqtt.client_id, adapters.http/can, heartbeat_interval and
-// device_timeout are parsed/overridable but not yet wired to behavior).
+// and docs/features/plans/24-http-adapter-poll-webhook-mtls.md for which
+// ones and why (metrics_port, auth.api_key_header, adapters.mqtt.client_id,
+// adapters.can, heartbeat_interval and device_timeout are parsed/
+// overridable but not yet wired to behavior; adapters.http.* is wired as of
+// issue #24).
 type Config struct {
 	Gateway Gateway `yaml:"gateway"`
 }
@@ -82,6 +84,21 @@ type MQTTAdapter struct {
 
 type HTTPAdapter struct {
 	PollInterval Duration `yaml:"poll_interval"`
+	// WebhookPort is where the device-facing webhook receiver listens
+	// (issue #24) — a separate server/port from HTTPPort's client-facing
+	// REST gateway, mirroring how GRPCPort/HTTPPort/MetricsPort are each
+	// their own listener.
+	WebhookPort int      `yaml:"webhook_port"`
+	MTLS        HTTPMTLS `yaml:"mtls"`
+}
+
+// HTTPMTLS is the client certificate the gateway presents to HTTP devices
+// when polling them (issue #24 AC: "gateway presents client cert to device
+// when configured") — distinct from Gateway.TLS, which is the gateway's
+// own server certificate for inbound gRPC/REST connections.
+type HTTPMTLS struct {
+	Cert string `yaml:"cert"`
+	Key  string `yaml:"key"`
 }
 
 type CANAdapter struct {
@@ -162,6 +179,11 @@ func (c *Config) ApplyEnv() error {
 	if err := overrideDuration(&c.Gateway.Adapters.HTTP.PollInterval, "UDAL_HTTP_POLL_INTERVAL"); err != nil {
 		return err
 	}
+	if err := overrideInt(&c.Gateway.Adapters.HTTP.WebhookPort, "UDAL_HTTP_WEBHOOK_PORT"); err != nil {
+		return err
+	}
+	overrideString(&c.Gateway.Adapters.HTTP.MTLS.Cert, "UDAL_HTTP_MTLS_CERT")
+	overrideString(&c.Gateway.Adapters.HTTP.MTLS.Key, "UDAL_HTTP_MTLS_KEY")
 	overrideString(&c.Gateway.Adapters.CAN.Interface, "UDAL_CAN_INTERFACE")
 	if err := overrideDuration(&c.Gateway.HeartbeatInterval, "UDAL_HEARTBEAT_INTERVAL"); err != nil {
 		return err

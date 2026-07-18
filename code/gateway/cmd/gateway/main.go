@@ -17,6 +17,7 @@ import (
 
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	udalv1 "github.com/paulefl/udal/code/api/proto/gen/udal/v1"
+	httpadapter "github.com/paulefl/udal/code/gateway/internal/adapters/http"
 	mqttadapter "github.com/paulefl/udal/code/gateway/internal/adapters/mqtt"
 	"github.com/paulefl/udal/code/gateway/internal/api"
 	"github.com/paulefl/udal/code/gateway/internal/auth"
@@ -134,6 +135,58 @@ func main() {
 			}
 		}
 	}
+
+	// ─── HTTP transport adapter (F-10, issue #24) ─────────────────────────────
+	// Unlike MQTT (gated behind a broker URL — there's no meaningful "off"
+	// switch otherwise), the HTTP adapter is always constructed: it has no
+	// global endpoint of its own, only per-device ones (Device.Labels, see
+	// package httpadapter's doc comment), so devices with transport=http just
+	// work without a separate opt-in.
+	httpClient := &http.Client{}
+	httpMTLSCert := config.ResolveString(os.Getenv("UDAL_HTTP_MTLS_CERT"), cfg.Gateway.Adapters.HTTP.MTLS.Cert, "")
+	if httpMTLSCert != "" {
+		httpMTLSKey := config.ResolveString(os.Getenv("UDAL_HTTP_MTLS_KEY"), cfg.Gateway.Adapters.HTTP.MTLS.Key, "")
+		cert, err := tls.LoadX509KeyPair(httpMTLSCert, httpMTLSKey)
+		if err != nil {
+			log.Error("load HTTP adapter mTLS client certificate", "cert", httpMTLSCert, "key", httpMTLSKey, "err", err)
+			os.Exit(1)
+		}
+		httpClient.Transport = &http.Transport{TLSClientConfig: &tls.Config{Certificates: []tls.Certificate{cert}}}
+		log.Info("HTTP adapter presenting client certificate to devices", "cert", httpMTLSCert)
+	}
+	httpAdapterOpts := []httpadapter.Option{httpadapter.WithHTTPClient(httpClient), httpadapter.WithLogger(log)}
+	if pollInterval := time.Duration(cfg.Gateway.Adapters.HTTP.PollInterval); pollInterval > 0 {
+		httpAdapterOpts = append(httpAdapterOpts, httpadapter.WithPollInterval(pollInterval))
+	}
+	httpAdapter := httpadapter.New(func(deviceID, path string, v api.PropertyValue) {
+		broker.Publish(api.PropertyUpdate{DeviceID: deviceID, PropertyPath: path, Value: v, Timestamp: time.Now()})
+	}, httpAdapterOpts...)
+	svc.SetHTTPAdapter(httpAdapter)
+
+	httpDevices, err := reg.List(registry.ListFilter{Transport: "http"})
+	if err != nil {
+		log.Error("list http devices", "err", err)
+		os.Exit(1)
+	}
+	for _, d := range httpDevices {
+		if err := httpAdapter.WatchDevice(context.Background(), d); err != nil {
+			log.Warn("watch http device", "device", d.ID, "err", err)
+		}
+	}
+
+	webhookAddr := config.ResolveAddr(os.Getenv("UDAL_HTTP_WEBHOOK_ADDR"), cfg.Gateway.Adapters.HTTP.WebhookPort, 8090)
+	webhookServer := &http.Server{
+		Addr:         webhookAddr,
+		Handler:      httpAdapter.Handler(),
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 10 * time.Second,
+	}
+	go func() {
+		log.Info("HTTP adapter webhook receiver listening", "addr", webhookAddr)
+		if err := webhookServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Error("HTTP webhook serve", "err", err)
+		}
+	}()
 
 	// ─── Auth (F-16/F-17/F-18/F-19/F-20) ──────────────────────────────────────
 	apiKeys, err := auth.NewAPIKeyStore(reg.DB())
@@ -334,6 +387,10 @@ func main() {
 			log.Error("MQTT disconnect", "err", err)
 		}
 	}
+	if err := webhookServer.Shutdown(shutCtx); err != nil {
+		log.Error("HTTP webhook shutdown", "err", err)
+	}
+	httpAdapter.Close()
 	presenceCancel()
 	log.Info("stopped")
 }

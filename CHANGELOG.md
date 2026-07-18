@@ -9,6 +9,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- HTTP transport adapter (F-10, `code/gateway/internal/adapters/http`): `GetProperty`
+  for `transport=http` devices issues a synchronous `GET {endpoint}/properties/{path}`
+  against the device's `http.endpoint` label and decodes the JSON response; a
+  background poll loop (`WatchDevice`, started automatically on `RegisterDevice`, or
+  at startup for pre-existing devices) periodically `GET`s a bulk `/properties`
+  snapshot and fans out only the properties that actually changed, keeping
+  `Subscribe` live without a broker. A device can also push a value ahead of its
+  next scheduled poll via `POST {webhook_addr}/devices/{deviceId}/events` — a
+  dedicated webhook receiver (`adapters.http.webhook_port`/`UDAL_HTTP_WEBHOOK_ADDR`,
+  default `:8090`), separate from the client-facing REST gateway. Poll interval is
+  configurable per device (`http.poll_interval` label) or gateway-wide
+  (`adapters.http.poll_interval`, default 5s, #41's existing config key, now wired).
+  mTLS: when `adapters.http.mtls.cert`/`.key` (or `UDAL_HTTP_MTLS_CERT`/`_KEY`) are
+  set, the adapter presents that client certificate on every outbound request.
+  HTTP 4xx/5xx responses map to the matching gRPC status (404→`NOT_FOUND`,
+  401→`UNAUTHENTICATED`, 403→`PERMISSION_DENIED`, 408→`DEADLINE_EXCEEDED`,
+  429→`RESOURCE_EXHAUSTED`, other 5xx→`UNAVAILABLE`, other 4xx→`INVALID_ARGUMENT`).
+  `SetProperty` for `transport=http` devices returns `UNIMPLEMENTED` — issue #24's
+  AC has no write path, and silently falling through to the in-memory
+  `PropertyStore` would be invisible to every subsequent `GetProperty` (which
+  always polls the adapter once one is configured), a worse footgun than a clear
+  "not supported" error. No circuit breaker (unlike the MQTT adapter, #11): there's
+  no persistent connection to protect, and each request already carries its own
+  timeout. (#24)
 - Capability Registry service (F-13/F-14/F-15): `CapabilityService` gRPC/REST API
   (`PublishSchema`/`GetSchema`/`ListSchemas`) stores, versions, and serves capability
   schemas (`code/gateway/internal/capability`), validated against the UDAL meta-schema
