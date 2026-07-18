@@ -106,13 +106,16 @@ jobs:
         with:
           go-version: "stable"
           cache: true
-      - uses: golangci/golangci-lint-action@v6
+      - uses: golangci/golangci-lint-action@v7
         with:
-          # Pinned explicitly: this action's "latest" resolves to the final
-          # v1.x release (v1.64.8, built with go1.24), not the true latest —
-          # v1.x refuses to lint any module whose go directive exceeds its
-          # own build-time Go version, which now fails outright once
-          # go.work moved to 1.25.0. v2.4.0+ is built with go1.25+.
+          # v6 hard-rejects any v2.x version string ("golangci-lint v2 is
+          # not supported by golangci-lint-action v6, you must update to
+          # golangci-lint-action v7") -- v7 is required to use v2.x at all.
+          # Pinned explicitly (not "latest"): v6's "latest" resolved to the
+          # final v1.x release (v1.64.8, built with go1.24), which refuses
+          # to lint any module whose go directive exceeds its own
+          # build-time Go version -- fails outright now that go.work is
+          # 1.25.0. v2.4.0+ is built with go1.25+.
           version: v2.12.2
           args: --timeout=5m ./code/gateway/...
 
