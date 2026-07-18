@@ -108,7 +108,12 @@ jobs:
           cache: true
       - uses: golangci/golangci-lint-action@v6
         with:
-          version: latest
+          # Pinned explicitly: this action's "latest" resolves to the final
+          # v1.x release (v1.64.8, built with go1.24), not the true latest —
+          # v1.x refuses to lint any module whose go directive exceeds its
+          # own build-time Go version, which now fails outright once
+          # go.work moved to 1.25.0. v2.4.0+ is built with go1.25+.
+          version: v2.12.2
           args: --timeout=5m ./code/gateway/...
 
   go-security:
