@@ -7,10 +7,11 @@ import "encoding/binary"
 const canFrameSize = 16
 
 // canEFFFlag/canRTRFlag/canERRFlag are the top three bits of a SocketCAN
-// can_id field (linux/can.h). Frame.ID keeps the EFF bit as-is (see
-// Message.ID's doc comment — it's also Vector DBC's own extended-ID
-// convention) but RTR/ERR frames carry no signal payload UDAL cares about,
-// so they're masked off on read.
+// can_id field (linux/can.h). Frame.ID keeps all three as-is on read (see
+// unmarshalFrame) — the EFF bit matters (see Message.ID's doc comment,
+// it's also Vector DBC's own extended-ID convention), and RTR/ERR frames
+// are left for Database lookups to naturally miss on (see unmarshalFrame)
+// rather than stripped here.
 const (
 	canEFFFlag = 0x80000000
 	canRTRFlag = 0x40000000

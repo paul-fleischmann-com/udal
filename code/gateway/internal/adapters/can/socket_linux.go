@@ -3,6 +3,7 @@
 package canadapter
 
 import (
+	"errors"
 	"fmt"
 	"net"
 
@@ -34,6 +35,16 @@ func openSocket(iface string) (rawSocket, error) {
 		_ = unix.Close(fd)
 		return nil, fmt.Errorf("can: bind to %q: %w", iface, err)
 	}
+	// Bounds how long a single blocking Read can take (see rawSocket's doc
+	// comment in socket.go) — without this, a Read in flight when Close
+	// closes the fd from another goroutine relies on unspecified OS
+	// behavior to unblock; with it, the read loop simply retries within
+	// readTimeout and notices Close on its own.
+	tv := unix.NsecToTimeval(readTimeout.Nanoseconds())
+	if err := unix.SetsockoptTimeval(fd, unix.SOL_SOCKET, unix.SO_RCVTIMEO, &tv); err != nil {
+		_ = unix.Close(fd)
+		return nil, fmt.Errorf("can: set read timeout on %q: %w", iface, err)
+	}
 	return &linuxSocket{fd: fd}, nil
 }
 
@@ -41,6 +52,9 @@ func (s *linuxSocket) ReadFrame() (Frame, error) {
 	buf := make([]byte, canFrameSize)
 	n, err := unix.Read(s.fd, buf)
 	if err != nil {
+		if errors.Is(err, unix.EAGAIN) || errors.Is(err, unix.EWOULDBLOCK) {
+			return Frame{}, errReadTimeout
+		}
 		return Frame{}, err
 	}
 	if n != canFrameSize {

@@ -141,6 +141,48 @@ ohne echte Bibliothek dahinter.
   dort schlicht `ErrLinuxOnly`), damit der Rest des Gateways dort weiter
   buildet und getestet werden kann.
 
+## Nachgezogen aus dem PR-Review (#60)
+
+Vier Findings aus dem Review vor Merge behoben:
+
+- **Lost-Update-Race in `WriteProperty`** (korrektheitskritisch): Die
+  Read-Modify-Write-Sequenz hielt `a.mu` nur für den Cache-Read, gab den Lock
+  vor Encode/Socket-Write wieder frei und griff ihn erst danach für das
+  Cache-Update erneut. Zwei gleichzeitige `WriteProperty`-Aufrufe für zwei
+  verschiedene Signale derselben Message konnten so beide vom selben
+  veralteten Basis-Frame ausgehen — der zweite Schreibvorgang verlor
+  stillschweigend die Änderung des ersten. `-race` findet das nicht (kein
+  Shared-Memory-Zugriff, nur ein logischer Lost Update). Fix: ein
+  `writeLocks map[uint32]*sync.Mutex` pro Message-ID (einmalig bei
+  Konstruktion aus `db.byID` aufgebaut, danach unveränderlich), das die
+  komplette Read-Encode-Write-Cache-Sequenz pro Message serialisiert —
+  Schreibvorgänge auf unterschiedliche Messages laufen weiterhin parallel.
+  Regressionstest `TestAdapter_ConcurrentWriteProperty_NoLostUpdate` (50
+  Iterationen, gegen den alten Code reproduzierbar fehlschlagend — verifiziert
+  vor dem endgültigen Fix per `git stash`).
+- **`Close()` verließ sich auf unspezifiziertes OS-Verhalten** beim
+  Schließen eines Filedeskriptors, auf dem ein anderer Goroutine gerade
+  blockierend liest (`unix.Read` ist anders als `net.Conn` nicht in Gos
+  Runtime-Netpoller integriert). Fix: `SO_RCVTIMEO` (500ms,
+  `readTimeout`-Konstante in `socket.go`) auf dem Socket, `EAGAIN`/
+  `EWOULDBLOCK` wird zu `errReadTimeout` und lässt `readLoop` einfach erneut
+  auf `a.done` prüfen, statt unbegrenzt zu blockieren — Shutdown hängt jetzt
+  nicht mehr vom Timing des `Close()`-Aufrufs ab, sondern läuft binnen einem
+  Read-Timeout-Intervall garantiert sauber durch.
+- **Selbstwidersprüchlicher Kommentar in `frame.go`**: `canRTRFlag`/
+  `canERRFlag`s Doc-Kommentar behauptete, diese Bits würden beim Lesen
+  maskiert — `unmarshalFrame` tat das nie (bewusst: unbekannte/geflaggte IDs
+  matchen ohnehin keine `Database`-Message). Kommentar korrigiert, Verhalten
+  unverändert.
+- **`processFrame`s Watcher-Lookup war O(alle beobachteten Geräte über alle
+  Messages)** statt O(Geräte, die genau diese Message beobachten) — ein
+  linearer Scan von `a.watched` bei jedem einzelnen eingehenden Frame,
+  unabhängig davon, ob er passt. Fix: zusätzlicher Index
+  `watchedByMessage map[string]map[string]api.Device`, gepflegt in
+  `WatchDevice` (inkl. Umzug in den neuen Bucket, falls sich das
+  `can.message`-Label eines bereits beobachteten Geräts ändert — sonst
+  bliebe ein verwaister Eintrag im alten Bucket zurück).
+
 ## E2E-/Testabdeckung
 
 - **DBC-Parser**: `dbc_test.go` — Messages/Signals/DLC/IDs, Feld-für-Feld-

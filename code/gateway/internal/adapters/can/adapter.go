@@ -36,6 +36,7 @@ package canadapter
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -69,11 +70,23 @@ type Adapter struct {
 	onUpdate OnPropertyUpdate
 	log      *slog.Logger
 
-	mu      sync.RWMutex
-	sock    rawSocket
-	values  map[string]api.PropertyValue // "message/signal" -> last decoded value
-	frames  map[uint32]Frame             // message ID -> last raw frame (read-modify-write base for WriteProperty)
-	watched map[string]api.Device        // deviceID -> device, for fan-out message-name matching
+	mu               sync.RWMutex
+	sock             rawSocket
+	values           map[string]api.PropertyValue     // "message/signal" -> last decoded value
+	frames           map[uint32]Frame                 // message ID -> last raw frame (read-modify-write base for WriteProperty)
+	watched          map[string]api.Device            // deviceID -> device
+	watchedByMessage map[string]map[string]api.Device // message name -> deviceID -> device, for O(watchers of this message) fan-out instead of O(all watched devices) per frame
+
+	// writeLocks serializes WriteProperty's read-modify-write-write
+	// sequence per message ID (built once at construction from db's fixed
+	// message set — never mutated afterward, so safe to read from multiple
+	// goroutines without a.mu). Without this, two concurrent WriteProperty
+	// calls for two different signals of the *same* message can both read
+	// the same stale base frame, encode independently, and the second
+	// write silently loses the first one's change (a lost-update race
+	// invisible to -race, since each goroutine only touches its own local
+	// frame copy — see TestAdapter_ConcurrentWriteProperty_NoLostUpdate).
+	writeLocks map[uint32]*sync.Mutex
 
 	closeOnce sync.Once
 	done      chan struct{}
@@ -84,13 +97,18 @@ type Adapter struct {
 // watched device; it must not block. Call Open before using the adapter.
 func New(db *Database, onUpdate OnPropertyUpdate, opts ...Option) *Adapter {
 	a := &Adapter{
-		db:       db,
-		onUpdate: onUpdate,
-		log:      slog.Default(),
-		values:   make(map[string]api.PropertyValue),
-		frames:   make(map[uint32]Frame),
-		watched:  make(map[string]api.Device),
-		done:     make(chan struct{}),
+		db:               db,
+		onUpdate:         onUpdate,
+		log:              slog.Default(),
+		values:           make(map[string]api.PropertyValue),
+		frames:           make(map[uint32]Frame),
+		watched:          make(map[string]api.Device),
+		watchedByMessage: make(map[string]map[string]api.Device),
+		writeLocks:       make(map[uint32]*sync.Mutex, len(db.byID)),
+		done:             make(chan struct{}),
+	}
+	for id := range db.byID {
+		a.writeLocks[id] = &sync.Mutex{}
 	}
 	for _, opt := range opts {
 		opt(a)
@@ -139,8 +157,20 @@ func (a *Adapter) WatchDevice(_ context.Context, d api.Device) error {
 		return fmt.Errorf("%w: %q (device %q)", ErrUnknownMessage, msgName, d.ID)
 	}
 	a.mu.Lock()
+	defer a.mu.Unlock()
+	if old, ok := a.watched[d.ID]; ok {
+		// A device re-registering under a different can.message label
+		// (rare, but possible) must move to the new index bucket, not
+		// leave a stale entry pointing watchers of the old message at it.
+		if oldMsg := old.Labels[LabelMessage]; oldMsg != msgName {
+			delete(a.watchedByMessage[oldMsg], d.ID)
+		}
+	}
 	a.watched[d.ID] = d
-	a.mu.Unlock()
+	if a.watchedByMessage[msgName] == nil {
+		a.watchedByMessage[msgName] = make(map[string]api.Device)
+	}
+	a.watchedByMessage[msgName][d.ID] = d
 	return nil
 }
 
@@ -171,6 +201,13 @@ func (a *Adapter) ReadProperty(ctx context.Context, d api.Device, path string) (
 // last frame seen for that message ID (or an all-zero payload if none has
 // been seen yet), so writing one signal never clobbers its siblings sharing
 // the same frame.
+//
+// The whole read-encode-write-cache sequence is serialized per message ID
+// via writeLocks: without it, two concurrent WriteProperty calls for two
+// different signals of the same message could both read the same stale
+// base frame, encode independently, and the second write would silently
+// lose the first one's change. Writes to different messages still proceed
+// fully in parallel.
 func (a *Adapter) WriteProperty(ctx context.Context, d api.Device, path string, v api.PropertyValue) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -181,11 +218,18 @@ func (a *Adapter) WriteProperty(ctx context.Context, d api.Device, path string, 
 	}
 	a.mu.RLock()
 	sock := a.sock
-	frame, haveFrame := a.frames[msg.ID]
+	wl := a.writeLocks[msg.ID]
 	a.mu.RUnlock()
 	if sock == nil {
 		return ErrNotOpen
 	}
+
+	wl.Lock()
+	defer wl.Unlock()
+
+	a.mu.RLock()
+	frame, haveFrame := a.frames[msg.ID]
+	a.mu.RUnlock()
 	if !haveFrame {
 		frame = Frame{ID: msg.ID, DLC: msg.DLC}
 	}
@@ -218,12 +262,26 @@ func (a *Adapter) resolve(d api.Device, path string) (*Message, *Signal, error) 
 	return msg, sig, nil
 }
 
-// readLoop drains sock until it errors (typically because Close closed the
-// underlying fd) or a.done is closed.
+// readLoop drains sock until a.done is closed. sock.ReadFrame is expected
+// to return errReadTimeout periodically (see socket_linux.go's
+// SO_RCVTIMEO) rather than blocking indefinitely — that bounds how long a
+// read can be in flight, so Close doesn't have to rely on the unspecified
+// behavior of closing a file descriptor a raw blocking syscall is parked
+// on in another goroutine (unlike net.Conn, golang.org/x/sys/unix reads
+// aren't integrated with Go's runtime netpoller). Close is instead noticed
+// here, at the top of the loop, within one read-timeout interval.
 func (a *Adapter) readLoop(sock rawSocket) {
 	for {
+		select {
+		case <-a.done:
+			return
+		default:
+		}
 		frame, err := sock.ReadFrame()
 		if err != nil {
+			if errors.Is(err, errReadTimeout) {
+				continue
+			}
 			select {
 			case <-a.done:
 				return
@@ -269,8 +327,9 @@ func (a *Adapter) processFrame(frame Frame) {
 		a.values[msg.Name+"/"+name] = v
 	})
 	var watchers []api.Device
-	for _, d := range a.watched {
-		if d.Labels[LabelMessage] == msg.Name {
+	if byMsg := a.watchedByMessage[msg.Name]; len(byMsg) > 0 {
+		watchers = make([]api.Device, 0, len(byMsg))
+		for _, d := range byMsg {
 			watchers = append(watchers, d)
 		}
 	}

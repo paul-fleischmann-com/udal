@@ -181,6 +181,54 @@ func TestAdapter_WriteProperty_PreservesSiblingSignal(t *testing.T) {
 	}
 }
 
+// TestAdapter_ConcurrentWriteProperty_NoLostUpdate guards against a
+// lost-update race in WriteProperty's read-modify-write sequence: two
+// goroutines writing different signals of the *same* message concurrently
+// must not have one silently overwrite the other. Without the per-message
+// writeLocks serialization, both goroutines could read the same stale base
+// frame and the second WriteFrame call would clobber the first goroutine's
+// change — a race invisible to -race (each goroutine only touches its own
+// local frame copy, so there's no data race on shared memory, only a
+// logical lost update). Runs many iterations since a flaky race wouldn't
+// necessarily reproduce every time even without the fix.
+func TestAdapter_ConcurrentWriteProperty_NoLostUpdate(t *testing.T) {
+	for i := 0; i < 50; i++ {
+		a, _ := newTestAdapter(t, nil)
+		d := engineDevice()
+
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			if err := a.WriteProperty(context.Background(), d, "EngineSpeed", api.FloatValue(100.0)); err != nil {
+				t.Errorf("WriteProperty EngineSpeed: %v", err)
+			}
+		}()
+		go func() {
+			defer wg.Done()
+			if err := a.WriteProperty(context.Background(), d, "EngineTemp", api.FloatValue(-10.0)); err != nil {
+				t.Errorf("WriteProperty EngineTemp: %v", err)
+			}
+		}()
+		wg.Wait()
+
+		speed, err := a.ReadProperty(context.Background(), d, "EngineSpeed")
+		if err != nil {
+			t.Fatalf("ReadProperty EngineSpeed: %v", err)
+		}
+		temp, err := a.ReadProperty(context.Background(), d, "EngineTemp")
+		if err != nil {
+			t.Fatalf("ReadProperty EngineTemp: %v", err)
+		}
+		if speed.FloatVal == nil || *speed.FloatVal != 100.0 {
+			t.Fatalf("iteration %d: EngineSpeed = %+v, want 100.0 (lost update)", i, speed)
+		}
+		if temp.FloatVal == nil || *temp.FloatVal != -10.0 {
+			t.Fatalf("iteration %d: EngineTemp = %+v, want -10.0 (lost update)", i, temp)
+		}
+	}
+}
+
 func TestAdapter_WriteProperty_NotOpen(t *testing.T) {
 	db := loadTestDB(t)
 	a := New(db, nil) // never Open'd / openFake'd
