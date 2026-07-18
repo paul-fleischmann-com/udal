@@ -21,6 +21,29 @@ func TestTopicBuilders(t *testing.T) {
 	if got, want := topicSetAck("dev-1", "temperature"), "udal/dev-1/props/temperature/set/ack"; got != want {
 		t.Errorf("topicSetAck = %q, want %q", got, want)
 	}
+	if got, want := topicStatus("dev-1"), "udal/dev-1/status"; got != want {
+		t.Errorf("topicStatus = %q, want %q", got, want)
+	}
+}
+
+func TestParseStatusTopic(t *testing.T) {
+	cases := []struct {
+		topic        string
+		wantDeviceID string
+		wantOK       bool
+	}{
+		{"udal/dev-1/status", "dev-1", true},
+		{"udal/dev-1/props/temperature", "", false},
+		{"udal/dev-1/status/extra", "", false},
+		{"not-udal/dev-1/status", "", false},
+		{"udal//status", "", false},
+	}
+	for _, c := range cases {
+		deviceID, ok := parseStatusTopic(c.topic)
+		if ok != c.wantOK || deviceID != c.wantDeviceID {
+			t.Errorf("parseStatusTopic(%q) = (%q, %v), want (%q, %v)", c.topic, deviceID, ok, c.wantDeviceID, c.wantOK)
+		}
+	}
 }
 
 func TestParsePropsTopic(t *testing.T) {

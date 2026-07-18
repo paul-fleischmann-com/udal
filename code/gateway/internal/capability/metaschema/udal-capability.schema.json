@@ -1,0 +1,184 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/paulefl/udal/schema/udal-capability.schema.json",
+  "title": "UDAL Device Capability Schema",
+  "description": "Meta-schema that validates UDAL capability schema files (JSON format).",
+  "type": "object",
+  "required": ["udal", "kind", "metadata"],
+  "additionalProperties": false,
+
+  "properties": {
+
+    "udal": {
+      "type": "string",
+      "const": "1.0",
+      "description": "UDAL capability schema format version."
+    },
+
+    "kind": {
+      "type": "string",
+      "const": "DeviceCapability"
+    },
+
+    "metadata": {
+      "type": "object",
+      "required": ["name", "version"],
+      "additionalProperties": false,
+      "properties": {
+        "name":        { "type": "string", "minLength": 1, "pattern": "^[a-z][a-z0-9-]*$" },
+        "version":     { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$" },
+        "description": { "type": "string" },
+        "author":      { "type": "string" },
+        "tags":        { "type": "array", "items": { "type": "string" } }
+      }
+    },
+
+    "definitions": {
+      "type": "object",
+      "description": "Reusable type definitions referenced via $ref.",
+      "additionalProperties": { "$ref": "#/$defs/TypeDef" }
+    },
+
+    "properties": {
+      "type": "object",
+      "description": "Device properties — readable and/or writable values.",
+      "additionalProperties": { "$ref": "#/$defs/PropertyDef" }
+    },
+
+    "commands": {
+      "type": "object",
+      "description": "Commands that can be sent to the device.",
+      "additionalProperties": { "$ref": "#/$defs/CommandDef" }
+    },
+
+    "events": {
+      "type": "object",
+      "description": "Events that the device can emit asynchronously.",
+      "additionalProperties": { "$ref": "#/$defs/EventDef" }
+    }
+  },
+
+  "$defs": {
+
+    "TypeDef": {
+      "description": "A type definition — either an inline type or a $ref.",
+      "oneOf": [
+        { "$ref": "#/$defs/ScalarTypeDef" },
+        { "$ref": "#/$defs/EnumTypeDef" },
+        { "$ref": "#/$defs/ArrayTypeDef" },
+        { "$ref": "#/$defs/ObjectTypeDef" },
+        { "$ref": "#/$defs/RefTypeDef" }
+      ]
+    },
+
+    "ScalarTypeDef": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type":        { "type": "string", "enum": ["bool", "int", "float", "string", "bytes"] },
+        "description": { "type": "string" },
+        "unit":        { "type": "string" },
+        "min":         { "type": "number" },
+        "max":         { "type": "number" },
+        "default":     {}
+      }
+    },
+
+    "EnumTypeDef": {
+      "type": "object",
+      "required": ["type", "values"],
+      "properties": {
+        "type":        { "type": "string", "const": "enum" },
+        "values":      { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+        "description": { "type": "string" },
+        "default":     { "type": "string" }
+      }
+    },
+
+    "ArrayTypeDef": {
+      "type": "object",
+      "required": ["type", "items"],
+      "properties": {
+        "type":        { "type": "string", "const": "array" },
+        "items":       { "$ref": "#/$defs/TypeDef" },
+        "minItems":    { "type": "integer", "minimum": 0 },
+        "maxItems":    { "type": "integer", "minimum": 0 },
+        "description": { "type": "string" }
+      }
+    },
+
+    "ObjectTypeDef": {
+      "type": "object",
+      "required": ["type", "properties"],
+      "properties": {
+        "type":       { "type": "string", "const": "object" },
+        "properties": { "type": "object", "additionalProperties": { "$ref": "#/$defs/TypeDef" } },
+        "required":   { "type": "array", "items": { "type": "string" } },
+        "description":{ "type": "string" }
+      }
+    },
+
+    "RefTypeDef": {
+      "type": "object",
+      "required": ["$ref"],
+      "properties": {
+        "$ref":        { "type": "string", "description": "JSON Pointer to a definition in #/definitions." },
+        "description": { "type": "string" }
+      }
+    },
+
+    "PropertyDef": {
+      "description": "A device property — extends TypeDef with readOnly/writeOnly.",
+      "allOf": [
+        { "$ref": "#/$defs/TypeDef" },
+        {
+          "type": "object",
+          "properties": {
+            "readOnly":  { "type": "boolean", "default": false },
+            "writeOnly": { "type": "boolean", "default": false }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+
+    "ParamDef": {
+      "description": "A command parameter — extends TypeDef with required flag.",
+      "allOf": [
+        { "$ref": "#/$defs/TypeDef" },
+        {
+          "type": "object",
+          "properties": {
+            "required": { "type": "boolean", "default": false }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+
+    "CommandDef": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "description": { "type": "string" },
+        "params": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/ParamDef" }
+        },
+        "returns": { "$ref": "#/$defs/TypeDef" }
+      }
+    },
+
+    "EventDef": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "description": { "type": "string" },
+        "payload": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/TypeDef" }
+        }
+      }
+    }
+  }
+}
