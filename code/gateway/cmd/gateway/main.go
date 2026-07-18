@@ -79,7 +79,7 @@ func main() {
 		log.Error("open device registry", "path", registryPath, "err", err)
 		os.Exit(1)
 	}
-	defer reg.Close()
+	defer func() { _ = reg.Close() }()
 
 	props := api.NewMemoryPropertyStore()
 	broker := api.NewBroker()

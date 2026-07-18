@@ -162,7 +162,7 @@ func (a *Adapter) getValue(ctx context.Context, url string) (wireValue, error) {
 	if err != nil {
 		return wireValue{}, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 400 {
 		return wireValue{}, &StatusError{StatusCode: resp.StatusCode, Status: resp.Status}
 	}

@@ -15,7 +15,7 @@ func newAPIKeyStore(t *testing.T) *auth.APIKeyStore {
 	if err != nil {
 		t.Fatalf("open bbolt db: %v", err)
 	}
-	t.Cleanup(func() { db.Close() })
+	t.Cleanup(func() { _ = db.Close() })
 	store, err := auth.NewAPIKeyStore(db)
 	if err != nil {
 		t.Fatalf("NewAPIKeyStore: %v", err)
