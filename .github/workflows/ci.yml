@@ -322,7 +322,13 @@ jobs:
   reflex-ci:
     name: Reflex Dashboard — Lint + Build check
     needs: changes
-    if: needs.changes.outputs.reflex == 'true' || github.ref == 'refs/heads/main'
+    # dashboard/ doesn't exist yet (issue #19) — its path filter includes
+    # code/sdk/python/** (the dashboard is planned to depend on the Python
+    # SDK, per issue #19's own description) ahead of the dashboard itself
+    # landing, so this job would otherwise fail outright on any Python SDK
+    # PR (pip install -e ".[dev]" in a directory with no pyproject.toml)
+    # instead of legitimately having nothing to check yet.
+    if: (needs.changes.outputs.reflex == 'true' || github.ref == 'refs/heads/main') && hashFiles('dashboard/pyproject.toml') != ''
     runs-on: ubuntu-latest
     defaults:
       run:
