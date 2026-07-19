@@ -1,0 +1,253 @@
+= UDAL Positioning: Why UDAL?
+:date: 2026-07-19
+:status: Draft — pending a decision on the open conflict flagged in <<conflict>>
+
+Written in response to https://github.com/paul-fleischmann-com/udal/issues/64[issue #64]
+("Define UDAL positioning as Universal Device Abstraction Layer for C"). Scope: identify
+comparable open-source projects, compare them against UDAL, and document a defensible
+"Why UDAL?" positioning plus recommended roadmap priorities.
+
+[[conflict]]
+== Before anything else: a framing conflict in issue #64 itself
+
+Issue #64 asks UDAL to be positioned as *"Universal Device Abstraction Layer for C"*,
+explicitly compared to **embedded-hal** (Rust's trait-based peripheral/bus abstraction
+for writing portable embedded drivers) and POSIX. Read literally, that means: a C API
+for abstracting hardware peripherals (GPIO, SPI, I2C, ...) across MCU platforms.
+
+That conflicts with three things this project has already decided, two of them very
+recently:
+
+* **Issue #1** ("Project Plan", the root vision document) lists the embedded SDK
+  language as *Rust* ("Memory safety, `no_std`, no GC") in its Technology Decisions
+  table. C does not appear anywhere in the SDK list (Go, Rust, Python, TypeScript).
+* **ADR-003** (`docs/arc42/ADRs/ADR-003-SDK-Languages.adoc`, status: Accepted,
+  2026-04-28) states outright: *"C was considered for the embedded SDK but rejected in
+  favour of Rust: memory safety guarantees reduce firmware bug surface without
+  significant runtime overhead."* It further classifies C (along with Java, C#) as a
+  **community-contributed** SDK, not maintained in-tree.
+* **Issue #5** ("Component: Device SDK (Go + C)") proposed exactly the kind of
+  first-party C SDK issue #64's framing implies — and was closed on 2026-07-15, four
+  days before #64 was opened, with this comment from the repo owner: *"Der C-SDK-Teil
+  wurde durch eine bereits getroffene Architekturentscheidung ersetzt — Issue #1
+  ('Resolved Decisions') legt Rust statt C für die Embedded-SDK fest (`no_std`); #34
+  (Rust SDK) trägt exakt dieselbe Footprint-Anforderung (<8 KB Flash, <2 KB RAM), die
+  hier für die C-SDK galt. Kein vergessener Scope, sondern bewusster Tech-Wechsel."*
+
+None of this means #64's underlying question — "is there whitespace UDAL occupies that
+no existing project covers?" — is wrong. It means the *"for C"* framing, taken
+literally, would require reopening a deliberate, recently-reaffirmed decision without
+that being #64's stated intent. This document proceeds on the reading that fits
+everything else UDAL has built and decided: **UDAL is a universal device abstraction
+layer, full stop — not scoped to one client language, and not a hardware/peripheral
+HAL.** <<roadmap>> lists resolving this explicitly as the first recommended action,
+independent of which way it's resolved.
+
+== What UDAL actually is today
+
+Per `docs/req42/req42.adoc`'s Business Goals (BG-01–BG-05) and everything shipped
+through milestone M3: UDAL is a **gateway**. A single Go binary that:
+
+* speaks MQTT (v3.1.1 + v5), HTTP (poll + webhook), and CAN (SocketCAN) to devices, and
+  exposes them to applications through one consistent gRPC/REST API (issues #9-#11,
+  #24-#25);
+* validates every device's properties/commands against a versioned, declarative JSON
+  Capability Schema (`schema/udal-capability.schema.json`, issues #22-#23) — not just
+  "pass bytes through," but a typed contract per device *type*;
+* runs with zero external services (embedded bbolt storage, issue #10) and a
+  three-layer auth chain (API-Key → mTLS → OAuth2 Device Flow, issue #9) with RBAC +
+  per-device ACL;
+* ships multi-language client SDKs (Go, Rust `no_std`-optional, Python, TypeScript —
+  ADR-003) so both device firmware and application code talk to it idiomatically;
+* is observable out of the box (structured JSON logs with request-scoped trace IDs,
+  Prometheus metrics, health/readiness — issues #27-#28) and extensible via a
+  `Transport` interface third parties can implement without forking (issue #26, BG-04).
+
+This is the thing to position and compare — not a hypothetical HAL.
+
+== Comparable projects
+
+[cols="2,3,2,2,2"]
+|===
+| Project | What it is | Abstraction level | Client-facing API | License
+
+| https://eclipse.dev/kura/[Eclipse Kura]
+| Java/OSGi IoT gateway framework running on the edge device itself; talks to field
+  protocols (Modbus, MQTT, OPC-UA) and hardware I/O (serial, GPIO, I2C) directly.
+| Transport + local hardware I/O, no device-type schema/capability model.
+| Java plugin API + REST.
+| EPL-2.0
+
+| https://www.edgexfoundry.org/[EdgeX Foundry]
+| Go/Linux Foundation microservices platform for the edge; each protocol gets its own
+  "device service," normalized into a common core.
+| Transport abstraction **plus** a YAML *Device Profile* (deviceResources +
+  deviceCommands) — the closest existing analogue to UDAL's Capability Registry.
+| REST between microservices; MQTT/REST device services.
+| Apache-2.0
+
+| https://eclipse.dev/ditto/[Eclipse Ditto] + https://www.eclipse.org/hono/[Eclipse Hono]
+| Hono unifies device connectivity (MQTT/AMQP/HTTP/CoAP) behind one AMQP endpoint;
+  Ditto layers a "digital twin" state/search/policy model on top. Two separate,
+  composed projects, five Ditto microservices on a Pekko cluster + MongoDB.
+| Transport abstraction (Hono) + twin/state abstraction (Ditto); no static per-device
+  schema comparable to a Capability Registry.
+| AMQP 1.0 (Hono); HTTP/WebSocket/AMQP (Ditto).
+| EPL-2.0
+
+| https://thingsboard.io/[ThingsBoard]
+| Full IoT platform: device management, rule engine, dashboards, telemetry storage
+  (Kafka/Cassandra/Postgres at scale).
+| Transport abstraction (MQTT/CoAP/HTTP) + Device Profiles, but profiles configure
+  platform behavior (rule chains, alarms) more than a portable typed property schema.
+| REST + platform-specific SDKs; rule-engine-centric, not a generic gRPC contract.
+| Apache-2.0
+
+| https://www.home-assistant.io/[Home Assistant]
+| Local-first home-automation hub; ~2000+ vendor integrations normalize wildly
+  different consumer device APIs into one state machine + event bus.
+| Deep but consumer/home-automation-specific transport+semantic abstraction; no
+  formal versioned schema registry, no gRPC, not designed for industrial/embedded use.
+| Python integration API; REST/WebSocket for clients.
+| Apache-2.0
+
+| https://nodered.org/[Node-RED]
+| Flow-based, low-code integration tool; a large node library bridges MQTT, HTTP,
+  CoAP, Modbus, etc.
+| Per-flow, per-node protocol glue — no persistent device registry or typed schema;
+  abstraction lives in the flow the user builds, not the platform.
+| Node.js node API; HTTP for the flow editor itself.
+| Apache-2.0
+
+| https://aws.amazon.com/greengrass/[AWS IoT Greengrass] / https://azure.microsoft.com/en-us/products/iot-edge[Azure IoT Edge]
+| Cloud-vendor edge runtimes; the open-source part is the *local* container/component
+  runtime, but device management, provisioning, and the control plane assume that
+  vendor's cloud (AWS IoT Core / Azure IoT Hub).
+| Deployment/lifecycle abstraction for edge *compute*, not primarily a device-protocol
+  abstraction; strong vendor lock-in above the OSS core.
+| Vendor cloud APIs (AWS IoT / Azure IoT Hub); components in C, C#, Java, Node.js, Python.
+| Apache-2.0 (runtime only — control plane is proprietary SaaS)
+|===
+
+=== What these solve, and what they don't
+
+Every project above solves *transport* abstraction — that space is crowded and mature.
+Three solve a *device-type schema* problem too (EdgeX's Device Profiles, ThingsBoard's
+Device Profiles, Ditto's twin model), but each ties it to something UDAL deliberately
+doesn't require:
+
+* EdgeX needs a distributed microservices deployment (Consul/Redis, one service per
+  protocol) even for a single edge box — heavier than "runs on a Raspberry Pi with zero
+  external services" (BG-02).
+* ThingsBoard's profiles configure *platform* behavior (rule chains, dashboards,
+  alarms); they're not a portable, versioned, transport-agnostic property/command
+  contract an application can validate against independent of the platform.
+* Ditto's twin model is deep but paired to Hono for connectivity and MongoDB for
+  storage — a heavier, cloud-native-shaped stack than a single edge binary.
+
+None of the seven combine: (a) a single zero-dependency binary, (b) a declarative,
+*versioned* capability schema as the actual contract (not just routing config), and
+(c) one consistent gRPC/REST surface generated from that same schema, across multiple
+official client-language SDKs. That combination — not "device abstraction" as a
+category, which is thoroughly occupied — is where UDAL's actual whitespace is.
+
+[[roadmap-vision]]
+== Where UDAL could differentiate long-term (roadmap ambition, not shipped)
+
+This section is speculative and should be read as such — nothing below exists in the
+codebase today.
+
+If, after resolving <<conflict>>, there's appetite to extend UDAL *below* the gateway
+— toward the device's own firmware, not just how it talks to the gateway — the
+relevant prior art is different from the gateway comparisons above:
+
+* https://github.com/rust-embedded/embedded-hal[**embedded-hal**] (Rust): a minimal
+  set of traits (`SpiBus`, `InputPin`, ...) that let one driver crate compile against
+  any MCU's HAL implementation. Complexity for M peripheral implementations × N
+  drivers approaches M+N instead of M×N. This is the model issue #64 cites — but it is
+  a *language-level trait system*, not a network protocol or a gateway; porting the
+  idea to C would mean defining a function-pointer-based vtable convention (closer to
+  Zephyr's approach below) since C has no traits.
+* https://docs.zephyrproject.org/latest/kernel/drivers/index.html[**Zephyr RTOS's
+  device driver model**]: a generic C API per peripheral class (UART, SPI, I2C, ...),
+  vendor HALs plugged in underneath via a build-time manifest (West) and hardware
+  described via Devicetree. This is the closest existing example of "HAL in C," and
+  it's already a mature, widely-adopted, Linux-Foundation-governed project — a future
+  UDAL HAL layer would need a concrete reason to exist alongside it (e.g., "abstracts
+  the UDAL capability model down to the peripheral," not "reimplements Zephyr's
+  driver model").
+
+Pursuing this would be a materially different, larger engineering effort than
+everything shipped so far (M1-M3): it requires per-MCU/platform ports, not just
+another transport adapter. It should be scoped as its own initiative with its own
+requirements (a new req42 feature set), not folded into the current gateway roadmap
+by way of a positioning doc.
+
+== Why UDAL? (given the above)
+
+UDAL is the only project surveyed that combines, in one deployable artifact:
+
+1. **Protocol independence at the application layer** — swapping a device's transport
+   (MQTT → HTTP → CAN) requires zero client code changes (BG-03), because the contract
+   is the capability schema, not the wire protocol.
+2. **A versioned, declarative capability contract** as the actual API surface (not
+   routing/dashboard config) — comparable in spirit to EdgeX's Device Profiles, but
+   the schema *is* the validation/typing boundary for both `SetProperty` and SDK
+   codegen, and versioning is first-class (`name@version`).
+3. **Zero-dependency edge deployment** — one Go binary, embedded bbolt storage, runs on
+   a Raspberry Pi at idle ≤ 150 MB RAM (BG-02) — lighter than EdgeX's microservices mesh
+   or Ditto/Hono's Pekko-cluster-plus-MongoDB stack.
+4. **Security and observability as defaults, not add-ons** — mTLS/OAuth2/RBAC and
+   structured logs/metrics/health are in the core gateway (issues #9, #27, #28), not
+   bolted on per deployment.
+5. **A pluggable `Transport` interface third parties implement without forking**
+   (BG-04, issue #26) — closer to how Kura/EdgeX let you add a device service, but
+   without needing OSGi bundles or a separate microservice process.
+
+What UDAL is *not*, and shouldn't claim to be: a home-automation hub (Home Assistant
+already owns that, with a 2000+-integration ecosystem UDAL cannot and shouldn't try to
+match); a full IoT SaaS platform with dashboards/rule-engine/alarms (ThingsBoard); or —
+pending resolution of <<conflict>> — a hardware peripheral HAL (Zephyr/embedded-hal's
+territory, not built and not close to it today).
+
+[[roadmap]]
+== Recommended roadmap priorities
+
+1. **Resolve the C-SDK/positioning conflict explicitly.** Either (a) confirm ADR-003
+   stands and reword any future positioning language away from "for C" — this document
+   already does that — or (b) deliberately supersede ADR-003 with a new ADR that
+   reopens C as a first-party SDK target and explains why the 2026-07-15 closure of
+   issue #5 no longer holds. Don't let the two states coexist silently; the next
+   contributor to read issue #64 literally will reintroduce the C SDK issue #5 just
+   closed.
+2. **Write this positioning into `README.adoc`**, not just as a standalone doc — a
+   "Why UDAL / How it compares" section belongs where new users actually land first
+   (the success criterion in #64 is explicitly "understandable for new users").
+3. **Capability Registry is the actual differentiator — invest there first.**
+   Compared to EdgeX's Device Profiles (the nearest analogue), UDAL's schema is not
+   yet as battle-tested against real device diversity. Before broadening scope (new
+   adapters, a HAL), harden what's already the unique part: richer schema validation,
+   a public schema catalog/examples repo, and codegen from schema into SDK types.
+4. **If OPC-UA/Modbus/BACnet adapters are ever considered** (explicitly a v1 non-goal
+   per issue #1), do it through the pluggable `Transport` interface (#26) as a
+   community-adapter proof point — that's a stronger "open ecosystem" (BG-04) story
+   than the gateway growing more protocols in-tree.
+5. **Don't chase the HAL idea (<<roadmap-vision>>) until 1-4 are done.** It's a
+   legitimate long-term differentiator *if* UDAL ever wants to own the full
+   device-to-cloud stack, but it's a different-sized project from what's been built,
+   and starting it now would dilute focus on the gateway differentiators that are
+   actually close to done.
+
+== Sources
+
+* https://eclipse.dev/kura/ + https://github.com/eclipse-kura/kura
+* https://www.edgexfoundry.org/ + https://docs.edgexfoundry.org/3.1/microservices/device/Ch-DeviceServices/
+* https://eclipse.dev/ditto/ + https://www.eclipse.org/hono/
+* https://thingsboard.io/ + https://thingsboard.io/docs/user-guide/device-profiles/
+* https://www.home-assistant.io/ + https://github.blog/open-source/maintainers/the-local-first-rebellion-how-home-assistant-became-the-most-important-project-in-your-house/
+* https://nodered.org/
+* https://aws.amazon.com/greengrass/ + https://docs.aws.amazon.com/greengrass/v2/developerguide/open-source.html
+* https://azure.microsoft.com/en-us/products/iot-edge + https://github.com/Azure/iotedge
+* https://github.com/rust-embedded/embedded-hal
+* https://docs.zephyrproject.org/latest/kernel/drivers/index.html
+* In-repo: `docs/arc42/ADRs/ADR-003-SDK-Languages.adoc`, GitHub issues #1, #5, #64
