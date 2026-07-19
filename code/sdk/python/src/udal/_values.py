@@ -24,16 +24,27 @@ def value_from_proto(pv: device_pb2.PropertyValue) -> Any:
     return getattr(pv, which)
 
 
+#: int_val is a proto3 int64 field — Python ints are unbounded, so a value
+#: outside this range would otherwise reach protobuf's own message
+#: constructor and raise a bare ValueError there instead of a clear,
+#: SDK-level one (code review finding, issue #18).
+_INT64_MIN = -(2**63)
+_INT64_MAX = 2**63 - 1
+
+
 def value_to_proto(value: PropertyValueInput) -> device_pb2.PropertyValue:
     """Converts a native Python value into a PropertyValue.
 
     Raises TypeError for an unsupported type (bool is checked before int,
     since bool is a subclass of int in Python and would otherwise be
-    silently misencoded as int_val).
+    silently misencoded as int_val), or ValueError for an int outside
+    int64 range.
     """
     if isinstance(value, bool):
         return device_pb2.PropertyValue(bool_val=value)
     if isinstance(value, int):
+        if not _INT64_MIN <= value <= _INT64_MAX:
+            raise ValueError(f"{value} is out of int64 range ({_INT64_MIN}..{_INT64_MAX})")
         return device_pb2.PropertyValue(int_val=value)
     if isinstance(value, float):
         return device_pb2.PropertyValue(float_val=value)

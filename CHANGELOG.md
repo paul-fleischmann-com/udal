@@ -19,11 +19,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   gRPC/protobuf stubs are generated from `code/api/proto/udal/v1/*.proto` via
   `grpcio-tools` (checked in under `src/udal/v1/`, `# do not edit manually` like the Go
   stubs) rather than buf's remote Python plugins, which need network access to
-  buf.build at generation time. `ruff`/`mypy --strict`/`pytest` all pass (89% coverage,
-  ≥80% required); verified manually against a running gateway: device registration,
-  `publish_property`→`get_property` round-trip, `write_property`, `send_command`
-  dispatched through a real command handler, and `subscribe` receiving a live property
-  update all worked end-to-end. (#18)
+  buf.build at generation time. `ruff`/`mypy --strict`/`pytest` all pass (93% coverage,
+  ≥80% required, verified in a clean venv); verified manually against a running
+  gateway: device registration, `publish_property`→`get_property` round-trip,
+  `write_property`, `send_command` dispatched through a real command handler, and
+  `subscribe` receiving a live property update all worked end-to-end. `run()`
+  reconnects on any command-stream disconnect, including a clean server-initiated
+  close (e.g. graceful gateway shutdown), not just an outright failure; `subscribe()`
+  cancels its underlying gRPC call if the caller stops iterating early. (#18)
 - Pluggable transport adapter interface (F-12/QR-09, `code/gateway/internal/adapter`):
   a new public `Transport` interface (`ReadProperty`/`WriteProperty`/`WatchDevice`)
   unifies the three built-in MQTT/HTTP/CAN adapters' operations behind one

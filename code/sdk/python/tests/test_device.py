@@ -90,6 +90,7 @@ async def test_on_command_dispatches_and_writes_result(
     assert result.id == "cmd-1"
     assert result.success is True
     assert result.result.string_value == "rebooted"
+    assert fake_service.received_device_id_header == device.id
 
 
 async def test_unknown_command_reports_error_result(
@@ -126,6 +127,32 @@ async def test_run_reconnects_after_stream_failures(
                 break
             await asyncio.sleep(0.05)
         assert fake_service.stream_commands_attempts >= 3
+    finally:
+        run_task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await run_task
+
+
+async def test_run_reconnects_after_clean_stream_close(
+    device: Device, fake_service: FakeDeviceService
+) -> None:
+    # Guards a code review finding, issue #18: an earlier version of run()
+    # returned outright the first time StreamCommands ended cleanly (no
+    # exception) instead of reconnecting — the Go SDK always reconnects,
+    # regardless of whether the stream ended with an error or cleanly, and
+    # only stops on cancellation. A clean close happens whenever the
+    # gateway closes the stream gracefully (shutdown, registry churn),
+    # not just on a network failure.
+    fake_service.stream_commands_close_clean_first_n = 2
+
+    run_task = asyncio.ensure_future(device.run())
+    try:
+        for _ in range(100):
+            if fake_service.stream_commands_attempts >= 3:
+                break
+            await asyncio.sleep(0.05)
+        assert fake_service.stream_commands_attempts >= 3
+        assert not run_task.done(), "run() must keep reconnecting, not return, after a clean close"
     finally:
         run_task.cancel()
         with pytest.raises(asyncio.CancelledError):

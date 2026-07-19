@@ -3,9 +3,9 @@ sends commands, and subscribes to live property updates."""
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from types import TracebackType
 from typing import Any
 
@@ -80,7 +80,7 @@ class Client:
         """Writes value to device_id's property at path."""
         try:
             pv = value_to_proto(value)
-        except TypeError as exc:
+        except (TypeError, ValueError) as exc:
             raise wrap_error(exc) from exc
         try:
             await self._stub.SetProperty(
@@ -107,7 +107,9 @@ class Client:
             return None
         return MessageToDict(resp.result)
 
-    async def subscribe(self, device_id: str, path: str = "") -> AsyncIterator[PropertyUpdate]:
+    async def subscribe(
+        self, device_id: str, path: str = ""
+    ) -> AsyncGenerator[PropertyUpdate, None]:
         """Streams property updates for device_id (every property if path
         is ""), until the caller stops iterating or the stream ends."""
         call = self._stub.Subscribe(
@@ -120,7 +122,17 @@ class Client:
                     device_id=ev.device_id,
                     property_path=ev.property_path,
                     value=value_from_proto(ev.value),
-                    timestamp=ev.timestamp.ToDatetime(),
+                    timestamp=ev.timestamp.ToDatetime(tzinfo=UTC),
                 )
         except grpc.RpcError as exc:
             raise wrap_error(exc) from exc
+        finally:
+            # A caller that stops iterating early (`break`, or the
+            # generator otherwise being closed) throws GeneratorExit in
+            # here rather than raising grpc.RpcError — without this, the
+            # underlying gRPC stream stays open (leaking a stream/goroutine
+            # on the gateway) until Python's refcounting or asyncgen
+            # finalizer hooks eventually get around to closing it, which
+            # isn't guaranteed to be prompt (code review finding, issue
+            # #18). call.cancel() is a no-op if the call already finished.
+            call.cancel()

@@ -16,7 +16,7 @@ from typing import Any
 
 import grpc
 from google.protobuf.json_format import MessageToDict
-from google.protobuf.struct_pb2 import Value
+from google.protobuf.struct_pb2 import Struct, Value
 
 from udal._channel import auth_metadata, dial
 from udal._values import PropertyValueInput, value_to_proto
@@ -52,6 +52,13 @@ class Device:
         self._stub = device_pb2_grpc.DeviceServiceStub(self._channel)  # type: ignore[no-untyped-call]
         self._device_id = config.device_id
         self._handlers: dict[str, CommandHandler] = {}
+        # Holds every in-flight _handle_command task so it isn't the only
+        # reference to itself — asyncio only holds a *weak* reference to a
+        # task once nothing else does, so an unreferenced task can be
+        # garbage-collected mid-execution (code review finding, issue #18).
+        # Self-removes via add_done_callback once the command's been
+        # handled and its result written back.
+        self._tasks: set[asyncio.Task[None]] = set()
 
     async def close(self) -> None:
         """Closes the underlying gRPC channel."""
@@ -101,7 +108,7 @@ class Device:
         """Writes a value to one of this device's own properties."""
         try:
             pv = value_to_proto(value)
-        except TypeError as exc:
+        except (TypeError, ValueError) as exc:
             raise wrap_error(exc) from exc
         try:
             await self._stub.SetProperty(
@@ -115,26 +122,38 @@ class Device:
         """Registers the device (if not already) and opens its command
         stream, re-registering and reconnecting with exponential backoff
         (1s up to 30s) if the connection is lost, until cancelled. Runs
-        until the enclosing task is cancelled."""
+        until the enclosing task is cancelled.
+
+        A *clean* stream end (the gateway closes StreamCommands with an OK
+        status — e.g. a graceful gateway shutdown, or the device's registry
+        entry being removed) is treated exactly like any other disconnect
+        and reconnected to, matching the Go SDK's Run: only cancellation
+        stops this loop, never a clean close (code review finding, issue
+        #18 — an earlier version returned outright on a clean close,
+        silently ending command handling for good)."""
         await self._register()
 
         backoff = _BASE_BACKOFF
         while True:
             connected_at = time.monotonic()
+            stream_exc: Exception | None = None
             try:
                 await self._run_command_stream()
-                return  # stream ended cleanly (server closed it)
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
-                if time.monotonic() - connected_at > _HEALTHY_STREAM_THRESHOLD:
-                    # The stream was healthy for a while before failing;
-                    # treat this as a fresh outage rather than compounding
-                    # backoff from a previous one.
-                    backoff = _BASE_BACKOFF
-                logger.warning(
-                    "command stream disconnected, reconnecting in %.0fs: %s", backoff, exc
-                )
+                stream_exc = exc
+
+            if time.monotonic() - connected_at > _HEALTHY_STREAM_THRESHOLD:
+                # The stream was healthy for a while before ending; treat
+                # this as a fresh outage rather than compounding backoff
+                # from a previous one.
+                backoff = _BASE_BACKOFF
+            logger.warning(
+                "command stream disconnected, reconnecting in %.0fs: %s",
+                backoff,
+                stream_exc or "stream closed",
+            )
 
             await asyncio.sleep(backoff)
             try:
@@ -147,7 +166,9 @@ class Device:
         metadata = (*self._metadata(), ("x-device-id", self.id))
         call = self._stub.StreamCommands(metadata=metadata)
         async for cmd in call:
-            asyncio.create_task(self._handle_command(call, cmd))
+            task = asyncio.create_task(self._handle_command(call, cmd))
+            self._tasks.add(task)
+            task.add_done_callback(self._tasks.discard)
 
     async def _handle_command(self, call: Any, cmd: device_pb2.Command) -> None:
         handler = self._handlers.get(cmd.name)
@@ -156,7 +177,10 @@ class Device:
             result.error = f'no handler registered for command "{cmd.name}"'
         else:
             try:
-                params = MessageToDict(cmd.params) if cmd.HasField("params") else {}
+                # MessageToDict(cmd.params) already returns {} for an unset
+                # (default-instance) params field — no need to branch on
+                # HasField first.
+                params = MessageToDict(cmd.params)
                 out = handler(params)
                 if asyncio.iscoroutine(out):
                     out = await out
@@ -174,19 +198,21 @@ class Device:
 
 def _to_value(out: Any) -> Value:
     """Converts a command handler's native return value into a
-    google.protobuf.Value, mirroring structpb.NewValue's supported types
-    in the Go SDK."""
-    v = Value()
-    if isinstance(out, bool):
-        v.bool_value = out
-    elif isinstance(out, (int, float)):
-        v.number_value = out
-    elif isinstance(out, str):
-        v.string_value = out
-    elif isinstance(out, dict):
-        v.struct_value.update(out)
-    elif isinstance(out, list):
-        v.list_value.extend(out)
-    else:
-        v.string_value = str(out)
-    return v
+    google.protobuf.Value, mirroring structpb.NewValue's supported types in
+    the Go SDK.
+
+    Delegates to Struct.update's own value coercion (wrapping out as the
+    lone field of a throwaway Struct, then taking that field back out as a
+    Value) instead of a hand-rolled isinstance chain — the earlier
+    hand-rolled version had no None case, so a handler returning a
+    dict/list containing None encoded it as the literal string "None"
+    instead of a JSON null; Struct.update handles None (and nested
+    dict/list) correctly already (code review finding, issue #18).
+    Raises the same error Struct.update itself raises (ValueError) for any
+    type it doesn't recognize either — caught by _handle_command's
+    existing try/except, reported as a device NACK, same as any other
+    handler failure.
+    """
+    wrapper = Struct()
+    wrapper.update({"result": out})
+    return wrapper.fields["result"]

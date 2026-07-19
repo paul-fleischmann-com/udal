@@ -23,7 +23,6 @@ class FakeDeviceService(device_pb2_grpc.DeviceServiceServicer):
 
     def __init__(self) -> None:
         self.properties: dict[tuple[str, str], device_pb2.PropertyValue] = {}
-        self.get_property_error: grpc.StatusCode | None = None
         self.register_response_id = "dev-generated"
         self.register_error: grpc.StatusCode | None = None
         self.register_calls: list[device_pb2.RegisterDeviceRequest] = []
@@ -41,13 +40,17 @@ class FakeDeviceService(device_pb2_grpc.DeviceServiceServicer):
         #: reconnect-with-backoff loop without a real ~30s network outage
         #: (mirrors the Go SDK's fakeDeviceServiceClient.failFirstN).
         self.stream_commands_fail_first_n = 0
+        #: StreamCommands returns cleanly (OK status, no exception) for the
+        #: first N call attempts instead of blocking — simulates a
+        #: gateway-initiated graceful close (e.g. shutdown, registry churn)
+        #: to test that Device.run reconnects on this path too, not just on
+        #: an outright failure (code review finding, issue #18).
+        self.stream_commands_close_clean_first_n = 0
         self.stream_commands_attempts = 0
 
     async def GetProperty(
         self, request: device_pb2.GetPropertyRequest, context: grpc.aio.ServicerContext[Any, Any]
     ) -> device_pb2.GetPropertyResponse:
-        if self.get_property_error is not None:
-            await context.abort(self.get_property_error, "simulated failure")
         value = self.properties.get((request.device_id, request.property_path))
         if value is None:
             await context.abort(grpc.StatusCode.NOT_FOUND, "property not found")
@@ -90,13 +93,21 @@ class FakeDeviceService(device_pb2_grpc.DeviceServiceServicer):
         context: grpc.aio.ServicerContext[Any, Any],
     ) -> AsyncIterator[device_pb2.Command]:
         self.stream_commands_attempts += 1
-        if self.stream_commands_attempts <= self.stream_commands_fail_first_n:
+        attempt = self.stream_commands_attempts
+        if attempt <= self.stream_commands_fail_first_n:
             await context.abort(grpc.StatusCode.UNAVAILABLE, "simulated outage")
             return
         md = dict(context.invocation_metadata() or ())
         self.received_device_id_header = md.get("x-device-id")
         for cmd in self.commands_to_send:
             yield cmd
+        if attempt <= self.stream_commands_close_clean_first_n:
+            # Checked before draining request_iterator below, deliberately:
+            # with no commands queued the device never writes anything back
+            # (there's nothing to respond to), so request_iterator's `async
+            # for` would otherwise block forever and this check would never
+            # be reached at all.
+            return  # ends cleanly (OK status) — no exception, unlike the abort() branch above
         async for result in request_iterator:
             self.received_results.append(result)
         if not self.commands_to_send:

@@ -29,3 +29,20 @@ def test_value_to_proto_bool_not_misencoded_as_int() -> None:
 
 def test_value_from_proto_empty() -> None:
     assert value_from_proto(device_pb2.PropertyValue()) is None
+
+
+def test_value_to_proto_int_out_of_int64_range_raises_value_error() -> None:
+    # int_val is a proto3 int64 field; Python ints are unbounded. Without
+    # an explicit range check, this would reach protobuf's own message
+    # constructor and raise a bare ValueError there instead of a clear,
+    # SDK-level one (code review finding, issue #18) — client.py/device.py
+    # both catch (TypeError, ValueError) here and re-raise as UdalError.
+    with pytest.raises(ValueError, match="int64 range"):
+        value_to_proto(2**63)
+    with pytest.raises(ValueError, match="int64 range"):
+        value_to_proto(-(2**63) - 1)
+
+
+def test_value_to_proto_int64_boundaries_are_accepted() -> None:
+    value_to_proto(2**63 - 1)
+    value_to_proto(-(2**63))

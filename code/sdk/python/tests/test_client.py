@@ -1,4 +1,6 @@
+import asyncio
 from collections.abc import AsyncGenerator
+from datetime import UTC
 
 import grpc
 import pytest
@@ -53,6 +55,18 @@ async def test_write_property_unsupported_type_raises_before_any_call(
     assert fake_service.set_property_calls == []
 
 
+async def test_write_property_int_out_of_range_raises_udal_error_not_bare_value_error(
+    client: Client, fake_service: FakeDeviceService
+) -> None:
+    # value_to_proto raises a bare ValueError for an out-of-int64-range
+    # int; write_property must still translate that into a UdalError like
+    # every other failure, per the SDK's documented contract (code review
+    # finding, issue #18 — an earlier version only caught TypeError here).
+    with pytest.raises(UdalError):
+        await client.write_property("dev-1", "x", 2**63)
+    assert fake_service.set_property_calls == []
+
+
 async def test_send_command_returns_result(client: Client, fake_service: FakeDeviceService) -> None:
     from google.protobuf.struct_pb2 import Value
 
@@ -99,3 +113,31 @@ async def test_subscribe_yields_property_updates(
     assert updates[0].value == 22.0
     assert updates[1].property_path == "humidity"
     assert updates[1].value == 55.0
+    assert updates[0].timestamp.tzinfo == UTC
+
+
+async def test_subscribe_closes_stream_promptly_on_early_break(
+    client: Client, fake_service: FakeDeviceService
+) -> None:
+    from tests.conftest import now_timestamp
+
+    # More events than the loop below actually consumes — without the
+    # subscribe() generator's finally: call.cancel(), closing the
+    # generator early wouldn't deterministically end the underlying gRPC
+    # stream (code review finding, issue #18). asyncio.wait_for bounds how
+    # long gen.aclose() is allowed to take; a stream left dangling here
+    # would show up as this test hanging past the timeout.
+    fake_service.subscribe_events = [
+        device_pb2.SubscribeResponse(
+            device_id="dev-1",
+            property_path=f"p{i}",
+            value=device_pb2.PropertyValue(float_val=float(i)),
+            timestamp=now_timestamp(),
+        )
+        for i in range(5)
+    ]
+
+    gen = client.subscribe("dev-1")
+    first = await anext(gen)
+    assert first.property_path == "p0"
+    await asyncio.wait_for(gen.aclose(), timeout=2.0)

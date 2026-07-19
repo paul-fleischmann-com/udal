@@ -12,6 +12,13 @@ license = { text = "Apache-2.0" }
 dependencies = [
     "grpcio>=1.60",
     "protobuf>=5",
+    # The generated udal.v1 stubs import google.api.annotations_pb2 (from
+    # device.proto/capability.proto's google.api.http options, used for the
+    # gateway's REST transcoding — unused by this SDK, but still imported
+    # at module load time) — that module ships in this package, not in
+    # grpcio/protobuf themselves. Without it, `import udal` itself fails
+    # with ModuleNotFoundError (code review finding, issue #18).
+    "googleapis-common-protos>=1.63",
 ]
 
 [project.optional-dependencies]
