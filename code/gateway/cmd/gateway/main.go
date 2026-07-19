@@ -32,6 +32,7 @@ import (
 	"github.com/paulefl/udal/code/gateway/internal/metrics"
 	"github.com/paulefl/udal/code/gateway/internal/registry"
 	"github.com/paulefl/udal/code/gateway/internal/service"
+	"github.com/paulefl/udal/code/gateway/internal/tracing"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
@@ -364,19 +365,33 @@ func main() {
 	}
 	authenticator := &auth.Authenticator{APIKeys: apiKeys, JWT: jwtValidator}
 
-	// requestLogger runs first in the interceptor chain (before auth) so a
-	// request that fails authentication still gets a trace ID and a
-	// logged outcome (F-23 AC: "Request log line includes trace_id").
-	// requestMetrics (issue #27) records udal_requests_total/
-	// udal_request_duration_seconds for every request; order relative to
-	// requestLogger/authenticator doesn't matter, it doesn't touch ctx.
+	// ─── Distributed tracing (F-24, issue #29) ────────────────────────────────
+	// UDAL_OTEL_ENDPOINT unset -> otlpEndpoint is "" -> NewProvider still
+	// builds a real TracerProvider (see its doc comment), just with no
+	// exporter attached — every request still gets a real trace_id for log
+	// correlation, only OTLP export is opt-in.
+	tracerProvider, err := tracing.NewProvider(context.Background(), os.Getenv("UDAL_OTEL_ENDPOINT"), "udal-gateway")
+	if err != nil {
+		log.Error("initialize tracing provider", "err", err)
+		os.Exit(1)
+	}
+	var tracer tracing.Interceptor
+
+	// requestLogger runs second in the interceptor chain, after tracer (so
+	// its request log line can pick up the trace ID tracer's "api" span
+	// established) and before auth (so a request that fails authentication
+	// still gets a trace ID and a logged outcome — F-23 AC: "Request log
+	// line includes trace_id"). requestMetrics (issue #27) records
+	// udal_requests_total/udal_request_duration_seconds for every request;
+	// order relative to requestLogger/authenticator doesn't matter, it
+	// doesn't touch ctx.
 	requestLogger := &logging.Interceptor{Log: baseLog.With("component", "gateway.api")}
 	var requestMetrics metrics.Interceptor
 
 	// ─── gRPC server ─────────────────────────────────────────────────────────
 	serverOpts := []grpc.ServerOption{
-		grpc.ChainUnaryInterceptor(requestLogger.UnaryInterceptor, requestMetrics.UnaryInterceptor, authenticator.UnaryInterceptor),
-		grpc.ChainStreamInterceptor(requestLogger.StreamInterceptor, requestMetrics.StreamInterceptor, authenticator.StreamInterceptor),
+		grpc.ChainUnaryInterceptor(tracer.UnaryInterceptor, requestLogger.UnaryInterceptor, requestMetrics.UnaryInterceptor, authenticator.UnaryInterceptor),
+		grpc.ChainStreamInterceptor(tracer.StreamInterceptor, requestLogger.StreamInterceptor, requestMetrics.StreamInterceptor, authenticator.StreamInterceptor),
 	}
 	var dialCreds credentials.TransportCredentials
 	// tlsConfig is shared with the HTTP listener below (Server.TLSConfig) so
@@ -561,6 +576,9 @@ func main() {
 	}
 	if err := metricsServer.Shutdown(shutCtx); err != nil {
 		log.Error("metrics/debug shutdown", "err", err)
+	}
+	if err := tracerProvider.Shutdown(shutCtx); err != nil {
+		log.Error("tracing provider shutdown", "err", err)
 	}
 	httpAdapter.Close()
 	presenceCancel()

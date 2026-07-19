@@ -9,11 +9,14 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// Interceptor establishes a per-request trace ID (see GenerateTraceID) and
-// logs exactly one JSON line per request — F-23's AC: "Request log line
-// includes trace_id". Register it first in the interceptor chain (before
-// auth.Authenticator's) so even a request that fails authentication gets a
-// trace ID and a logged outcome, matching how grpc-gateway's REST
+// Interceptor logs exactly one JSON line per request — F-23's AC: "Request
+// log line includes trace_id". It doesn't establish the trace ID itself;
+// tracing.Interceptor (issue #29) does that by starting a real OpenTelemetry
+// span, and contextHandler (handler.go) reads it back out of ctx
+// automatically for every log call, including this one. Register
+// tracing.Interceptor first in the chain, this one second — before
+// auth.Authenticator's, so even a request that fails authentication gets a
+// trace ID and a logged outcome — matching how grpc-gateway's REST
 // translation layer also funnels through this same gRPC server, so one
 // interceptor covers both surfaces.
 type Interceptor struct {
@@ -28,7 +31,6 @@ type Interceptor struct {
 
 // UnaryInterceptor is a grpc.UnaryServerInterceptor.
 func (i *Interceptor) UnaryInterceptor(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
-	ctx = WithTraceID(ctx, GenerateTraceID())
 	start := time.Now()
 	resp, err := handler(ctx, req)
 	i.logRequest(ctx, info.FullMethod, time.Since(start), err)
@@ -37,10 +39,9 @@ func (i *Interceptor) UnaryInterceptor(ctx context.Context, req any, info *grpc.
 
 // StreamInterceptor is a grpc.StreamServerInterceptor.
 func (i *Interceptor) StreamInterceptor(srv any, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-	ctx := WithTraceID(ss.Context(), GenerateTraceID())
 	start := time.Now()
-	err := handler(srv, &tracedStream{ServerStream: ss, ctx: ctx})
-	i.logRequest(ctx, info.FullMethod, time.Since(start), err)
+	err := handler(srv, ss)
+	i.logRequest(ss.Context(), info.FullMethod, time.Since(start), err)
 	return err
 }
 
@@ -51,14 +52,3 @@ func (i *Interceptor) logRequest(ctx context.Context, method string, dur time.Du
 		"duration_ms", dur.Milliseconds(),
 	)
 }
-
-// tracedStream overrides Context() so downstream handlers (and the auth
-// interceptor's identity-carrying context, layered on top of this one)
-// observe the trace-ID-carrying context rather than the original stream's
-// — mirroring auth.authenticatedStream's same pattern.
-type tracedStream struct {
-	grpc.ServerStream
-	ctx context.Context
-}
-
-func (s *tracedStream) Context() context.Context { return s.ctx }

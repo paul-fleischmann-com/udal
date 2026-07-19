@@ -742,26 +742,25 @@ same four level names) on the metrics listener
 
 | Trace ID Convention
 a|
-`trace_id` is generated per gRPC request (also covering REST, which
-grpc-gateway proxies through the same server) as 16 random bytes,
-hex-encoded — the W3C Trace Context / OpenTelemetry `TraceID` format, ahead
-of OpenTelemetry tracing itself (F-24/issue #29) actually being wired in.
-Any log call scoped to that request's `context.Context` (via the `*Context`
-`log/slog` methods) picks it up automatically; log calls with no request
-context (startup, background goroutines) have no `trace_id`, same as they'd
-have no active OTEL span once F-24 lands. **Interim, pending F-24:** there
-is no real OTEL span yet for the logged `trace_id` to match — F-24's own
-work only needs to replace the ID-generation call with the real span's
-`TraceID` (same format, same log key), not change anything downstream.
+`trace_id` is the real OpenTelemetry `TraceID` of the active span
+(F-24/issue #29): `tracing.Interceptor` starts an `"api"` span for every
+gRPC request (also covering REST, which grpc-gateway proxies through the
+same server) as the first interceptor in the chain, and
+`logging.contextHandler` reads that span's `TraceID` back out of
+`context.Context` for every log call made within it, via the `*Context`
+`log/slog` methods. Log calls with no request context (startup, background
+goroutines) have no active span and so no `trace_id`. A real
+`*sdktrace.TracerProvider` is built and registered on startup regardless of
+whether `UDAL_OTEL_ENDPOINT` is set — its default sampler produces a real,
+random trace ID for every span even with no exporter attached — so this
+holds whether or not tracing export (F-24) is enabled; only the OTLP
+network traffic itself is conditional.
 
 | Acceptance Criteria
 a|
 - [x] Every log line is valid JSON with all mandatory fields
 - [x] `UDAL_LOG_LEVEL=debug` enables debug logs without restart
-- [ ] Request log line includes `trace_id` matching the OTEL span ID —
-      `trace_id` is present on every request log line in OTEL's own ID
-      format, but there is no OTEL span to match until F-24 (issue #29) is
-      implemented; see Trace ID Convention above
+- [x] Request log line includes `trace_id` matching the OTEL span ID
 |===
 
 ==== F-24 — OpenTelemetry Tracing
@@ -778,9 +777,20 @@ a|
 
 | Acceptance Criteria
 a|
-- [ ] Every gRPC request produces a trace with spans: `api`, `auth`, `router`, `adapter`
-- [ ] `trace_id` is consistent across all spans in one request
-- [ ] OTLP endpoint configurable via `UDAL_OTEL_ENDPOINT`; tracing disabled if unset
+- [x] Every gRPC request produces a trace with spans: `api`, `auth`, `router`, `adapter` —
+      `api` (`tracing.Interceptor`) and `auth` (`auth.Authenticator`) on every
+      request; `router` and `adapter` on `GetProperty`/`SetProperty` when
+      routed to a transport adapter (mqtt/http/can) — the only two RPCs that
+      dispatch to one, see `service.DeviceService`'s doc comments
+- [x] `trace_id` is consistent across all spans in one request — all four are
+      descendants of the same request-scoped `context.Context`, so they share
+      one `TraceID` by construction (OpenTelemetry SDK invariant, also
+      exercised directly by `internal/tracing`, `internal/auth`, and
+      `internal/service`'s span tests)
+- [x] OTLP endpoint configurable via `UDAL_OTEL_ENDPOINT`; tracing disabled if unset —
+      unset means no OTLP exporter is attached (no network traffic leaves the
+      process), not that spans/trace_id stop being produced, see Trace ID
+      Convention above
 |===
 
 // ─────────────────────────────────────────────────────────────────────────────

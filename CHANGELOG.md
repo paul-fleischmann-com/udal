@@ -9,6 +9,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- OpenTelemetry distributed tracing (F-24, `code/gateway/internal/tracing`):
+  `tracing.NewProvider` builds and globally registers a real
+  `*sdktrace.TracerProvider` on startup — always, regardless of whether
+  `UDAL_OTEL_ENDPOINT` is set, since the default sampler produces a real trace
+  ID for every span even with no exporter attached (this is what lets #28's
+  per-request `trace_id` keep working when tracing export is "disabled"; only
+  the OTLP network traffic itself is conditional on the endpoint being set). A
+  new `tracing.Interceptor`, running first in the gRPC interceptor chain (ahead
+  of `logging.Interceptor` and `auth.Authenticator`), starts an `"api"` span
+  for every request; `logging.contextHandler` now reads its real `TraceID`
+  back out of the request context instead of generating its own placeholder
+  one, making #28's `trace_id` field an actual OTEL span ID for the first
+  time. `auth.Authenticator` wraps authentication in a sibling `"auth"` span;
+  `DeviceService.GetProperty`/`SetProperty` wrap transport-adapter dispatch in
+  nested `"router"`/`"adapter"` spans (only for those two RPCs, and only when
+  actually routed to a transport adapter — the `PropertyStore` fallback gets a
+  `"router"` span but no `"adapter"` span). `UDAL_OTEL_ENDPOINT` accepts either
+  a bare `host:port` (plaintext OTLP/gRPC) or a full URL with scheme (TLS via
+  `https://`). The provider is flushed via `Shutdown` during graceful
+  shutdown, after the HTTP servers stop, so any spans still buffered in the
+  batch processor are exported before the process exits. Verified end-to-end
+  against a running gateway: `RegisterDevice`/`SetProperty`/`GetProperty` via
+  REST each produced a request log line with a distinct, valid `trace_id`.
+  (#29)
 - Health + Prometheus metrics endpoints (F-21/F-22, `code/gateway/internal/health`
   + `code/gateway/internal/metrics`), served on the metrics listener
   (`adapters.metrics_port`/`UDAL_METRICS_PORT`, first given a real listener by #28)

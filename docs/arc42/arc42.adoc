@@ -473,10 +473,11 @@ volumes:
   listener changes it live, since a running process can't observe its own
   environment changing without a restart
 * One JSON line logged per gRPC request (also covering REST, proxied through
-  the same server) by a `logging.Interceptor` running first in the chain,
-  before auth — carries a per-request `trace_id` (16 random bytes,
-  hex-encoded, OpenTelemetry `TraceID`-shaped ahead of F-24/issue #29 wiring
-  in a real OTEL span)
+  the same server) by a `logging.Interceptor` running second in the chain,
+  right after `tracing.Interceptor` and before auth — carries a per-request
+  `trace_id`, the real OpenTelemetry `TraceID` of the `"api"` span
+  `tracing.Interceptor` started (issue #29), read back out of `ctx` by
+  `contextHandler`
 
 === 8.3 Observability
 
@@ -488,7 +489,22 @@ volumes:
   `heartbeat.Monitor`'s status-transition hook (adapter errors/devices
   online, respectively) — served from `promhttp.Handler()`, no separate
   registry to keep in sync
-* **Tracing:** OpenTelemetry (OTLP exporter); trace context propagated via gRPC metadata — not yet implemented (issue #29); `code/gateway/internal/logging`'s per-request `trace_id` (issue #28) is already OTEL `TraceID`-shaped ahead of this landing
+* **Tracing** (issue #29): OpenTelemetry SDK, `code/gateway/internal/tracing`.
+  `tracing.NewProvider` builds and globally registers a real
+  `*sdktrace.TracerProvider` on startup — always, regardless of whether
+  `UDAL_OTEL_ENDPOINT` is set, since its default sampler produces a real
+  trace ID for every span even with no exporter attached (that's what keeps
+  §8.2's per-request `trace_id` working when tracing export is "disabled").
+  Only when `UDAL_OTEL_ENDPOINT` is non-empty is an OTLP/gRPC exporter
+  (`otlptracegrpc`) attached via `WithBatcher`; a bare `host:port` value
+  dials plaintext, a full URL (`https://...`) dials TLS. Span tree per
+  request: `api` (`tracing.Interceptor`, first in the gRPC interceptor
+  chain) → `auth` (`auth.Authenticator`) as a sibling child, and → `router`
+  (`DeviceService.GetProperty`/`SetProperty`) → `adapter` (mqtt/http/can
+  dispatch) as a nested child, only for those two RPCs and only when routed
+  to a transport adapter. W3C Trace Context propagation
+  (`propagation.TraceContext`/`Baggage`) is registered but not yet exercised
+  by any outbound call this gateway makes.
 * **Health** (issue #27): `GET /health` returns HTTP 200 `{"status":"ok"}` when the gateway is ready, `503 {"status":"starting"}` before every listener is up, and includes a per-adapter `"degraded"` status (still HTTP 200) for any adapter implementing `health.Reporter` (MQTT: circuit breaker open; CAN: read loop stopped) — served on the same metrics listener as `/metrics` and `/debug/log-level`
 
 === 8.4 Configuration

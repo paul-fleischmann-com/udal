@@ -4,6 +4,8 @@ import (
 	"context"
 	"io"
 	"log/slog"
+
+	"go.opentelemetry.io/otel/trace"
 )
 
 // NewHandler returns the gateway's structured JSON log handler: slog's own
@@ -32,16 +34,25 @@ func replaceAttr(groups []string, a slog.Attr) slog.Attr {
 }
 
 // contextHandler wraps a slog.Handler to append a "trace_id" attribute
-// from ctx (see WithTraceID/TraceIDFromContext) to every log record that
-// has one — the standard documented pattern for attaching a context-scoped
-// value to every log.Handler.Handle call without threading it through
-// every log call's explicit arguments.
+// from ctx to every log record that has one — the standard documented
+// pattern for attaching a context-scoped value to every log.Handler.Handle
+// call without threading it through every log call's explicit arguments.
+//
+// The real OpenTelemetry span in ctx (tracing.Interceptor establishes one
+// for every request, issue #29) is the primary source — this is what makes
+// F-23's "Request log line includes trace_id matching the OTEL span ID"
+// (issue #28) literally true, not just OTEL-ID-shaped. WithTraceID/
+// TraceIDFromContext remain as a fallback for a context with no active
+// span (e.g. a call site that predates or bypasses the tracing
+// interceptor, such as a background goroutine).
 type contextHandler struct {
 	slog.Handler
 }
 
 func (h contextHandler) Handle(ctx context.Context, r slog.Record) error {
-	if traceID, ok := TraceIDFromContext(ctx); ok {
+	if sc := trace.SpanContextFromContext(ctx); sc.HasTraceID() {
+		r.AddAttrs(slog.String("trace_id", sc.TraceID().String()))
+	} else if traceID, ok := TraceIDFromContext(ctx); ok {
 		r.AddAttrs(slog.String("trace_id", traceID))
 	}
 	return h.Handler.Handle(ctx, r)
