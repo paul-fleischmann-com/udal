@@ -480,9 +480,16 @@ volumes:
 
 === 8.3 Observability
 
-* **Metrics:** Prometheus at `/metrics` — `udal_devices_online`, `udal_requests_total{operation,status}`, `udal_adapter_errors_total{adapter}`, `udal_request_duration_seconds`
-* **Tracing:** OpenTelemetry (OTLP exporter); trace context propagated via gRPC metadata
-* **Health:** `GET /health` returns HTTP 200 when gateway is ready
+* **Metrics** (issue #27): Prometheus at `/metrics` — `udal_devices_online`,
+  `udal_requests_total{operation,status}`, `udal_adapter_errors_total{adapter}`,
+  `udal_request_duration_seconds{operation}`. `code/gateway/internal/metrics`
+  package-level `promauto` collectors, recorded by a gRPC interceptor
+  (requests/duration) and at `DeviceService`'s adapter call sites/
+  `heartbeat.Monitor`'s status-transition hook (adapter errors/devices
+  online, respectively) — served from `promhttp.Handler()`, no separate
+  registry to keep in sync
+* **Tracing:** OpenTelemetry (OTLP exporter); trace context propagated via gRPC metadata — not yet implemented (issue #29); `code/gateway/internal/logging`'s per-request `trace_id` (issue #28) is already OTEL `TraceID`-shaped ahead of this landing
+* **Health** (issue #27): `GET /health` returns HTTP 200 `{"status":"ok"}` when the gateway is ready, `503 {"status":"starting"}` before every listener is up, and includes a per-adapter `"degraded"` status (still HTTP 200) for any adapter implementing `health.Reporter` (MQTT: circuit breaker open; CAN: read loop stopped) — served on the same metrics listener as `/metrics` and `/debug/log-level`
 
 === 8.4 Configuration
 

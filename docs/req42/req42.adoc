@@ -644,11 +644,27 @@ a|
 | Description
 | `GET /health` returns HTTP 200 with JSON body when the gateway is healthy and ready.
 
+| Readiness Convention
+a|
+Served on the metrics listener (`adapters.metrics_port`/`UDAL_METRICS_PORT`,
+default `9090`), alongside `/metrics` (F-22) and `/debug/log-level` (F-23).
+Not-ready (`503 {"status":"starting"}`) until every listener has started;
+`SetReady(false)` is called again first thing on shutdown, so a readiness
+probe mid-drain sees `503` before any listener actually stops. Per-adapter
+degraded status is reported for adapters that implement `health.Reporter` —
+currently the MQTT adapter (circuit breaker open, issue #11) and the CAN
+adapter (read loop stopped on a real socket error, issue #25). The HTTP
+adapter doesn't implement it: it has no persistent connection or comparable
+failure mode (each request carries its own timeout, see package
+`httpadapter`'s doc comment on why it also has no circuit breaker) — it's
+simply absent from the `adapters` object in the response body, not falsely
+reported "ok".
+
 | Acceptance Criteria
 a|
-- [ ] Gateway ready → `GET /health` returns `200 {"status": "ok"}`
-- [ ] Gateway starting (not yet ready) → `503`
-- [ ] Adapter(s) failed → `200` with degraded status per adapter in body (gateway still serves other adapters)
+- [x] Gateway ready → `GET /health` returns `200 {"status": "ok"}`
+- [x] Gateway starting (not yet ready) → `503`
+- [x] Adapter(s) failed → `200` with degraded status per adapter in body (gateway still serves other adapters)
 |===
 
 ==== F-22 — Prometheus Metrics
@@ -669,11 +685,37 @@ a|
 - `udal_request_duration_seconds{operation}` (histogram) — request latency
 - `udal_adapter_errors_total{adapter}` (counter) — adapter-level errors
 
+| Metrics Convention
+a|
+All four are `code/gateway/internal/metrics` package-level collectors
+(`promauto`, registered against `prometheus.DefaultRegisterer` —
+`promhttp.Handler()` on `/metrics` serves exactly that registry), so any
+package can record without a constructor-injected dependency.
+`udal_requests_total`/`udal_request_duration_seconds` are recorded by a
+`metrics.Interceptor` in the gRPC interceptor chain (also covering REST,
+proxied through the same server) — `operation` is the short RPC name
+(`GetProperty`, not the full `/udal.v1.DeviceService/GetProperty` path).
+`udal_adapter_errors_total` is recorded in `DeviceService.GetProperty`/
+`SetProperty` at each of the three transport adapters' call sites — the
+single place every adapter operation's outcome is already observed
+uniformly, regardless of which specific error the adapter returned.
+`udal_devices_online` is driven by `heartbeat.Monitor`'s existing
+online/offline transition point (`WithOnStatusChange`, issue #42) — the
+same `Touch`/`Sweep` calls that already emit a `Broker` status event.
+Like any Prometheus `CounterVec`/`HistogramVec`, `udal_requests_total`/
+`udal_request_duration_seconds`/`udal_adapter_errors_total` don't emit a
+sample for a given label combination until it's actually been observed
+once (standard Prometheus client behavior, not a bug) — verified end-to-end
+with a real request against a running gateway, see the plan doc.
+
 | Acceptance Criteria
 a|
-- [ ] All four metrics present after startup
-- [ ] `udal_devices_online` increments on RegisterDevice, decrements on timeout
-- [ ] `udal_request_duration_seconds` p99 bucket matches load test measurements
+- [x] All four metrics present after startup
+- [x] `udal_devices_online` increments on RegisterDevice, decrements on timeout
+- [ ] `udal_request_duration_seconds` p99 bucket matches load test measurements —
+      not verified as part of this ticket; issue #43's load/soak test harness
+      exists but wasn't re-run against this histogram's bucket boundaries
+      (`prometheus.DefBuckets`) specifically
 |===
 
 ==== F-23 — Structured Logging

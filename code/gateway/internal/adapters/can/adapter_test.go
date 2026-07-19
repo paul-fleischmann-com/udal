@@ -312,3 +312,34 @@ func TestAdapter_Close_Idempotent(t *testing.T) {
 		t.Fatalf("second Close: %v", err)
 	}
 }
+
+func TestAdapter_Healthy(t *testing.T) {
+	a, sock := newTestAdapter(t, nil)
+
+	if ok, detail := a.Healthy(); !ok {
+		t.Fatalf("Healthy() = (false, %q), want (true, \"\") for a fresh adapter", detail)
+	}
+
+	sock.failWith(errors.New("simulated interface down"))
+
+	waitFor(t, func() bool {
+		ok, _ := a.Healthy()
+		return !ok
+	})
+	if _, detail := a.Healthy(); detail == "" {
+		t.Error("Healthy() detail is empty, want a reason")
+	}
+}
+
+// TestAdapter_Healthy_CloseNotReportedUnhealthy verifies an expected
+// shutdown (Close) doesn't make the adapter report itself unhealthy —
+// only a real read error should (see lastReadErr's doc comment).
+func TestAdapter_Healthy_CloseNotReportedUnhealthy(t *testing.T) {
+	a, _ := newTestAdapter(t, nil)
+	if err := a.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if ok, detail := a.Healthy(); !ok {
+		t.Errorf("Healthy() = (false, %q) after a clean Close, want (true, \"\")", detail)
+	}
+}

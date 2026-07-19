@@ -131,6 +131,18 @@ func (a *Adapter) Disconnect(ctx context.Context) error {
 	return tr.Disconnect(ctx)
 }
 
+// Healthy reports the adapter unhealthy while its circuit breaker is open
+// (issue #11: 5 consecutive ReadProperty/WriteProperty failures) — the
+// same signal that already makes every request to this adapter fail fast
+// with ErrCircuitOpen, surfaced to GET /health (issue #27) via
+// health.Reporter.
+func (a *Adapter) Healthy() (bool, string) {
+	if a.cb.isOpen() {
+		return false, "circuit breaker open"
+	}
+	return true, ""
+}
+
 // WatchDevice subscribes to every property publish for deviceID
 // (udal/{deviceId}/props/#), so OnPropertyUpdate fires for values the
 // gateway never explicitly requested — the "Subscribe: fan-out to Router on

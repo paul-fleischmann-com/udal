@@ -88,6 +88,13 @@ type Adapter struct {
 	// frame copy — see TestAdapter_ConcurrentWriteProperty_NoLostUpdate).
 	writeLocks map[uint32]*sync.Mutex
 
+	// lastReadErr is set when readLoop exits because of a real socket
+	// error (not the expected periodic errReadTimeout, and not a Close-
+	// triggered shutdown) — surfaced via Healthy() (issue #27) so GET
+	// /health can report this adapter degraded once its read loop has
+	// stopped, e.g. the underlying interface went down.
+	lastReadErr error
+
 	closeOnce sync.Once
 	done      chan struct{}
 }
@@ -143,6 +150,19 @@ func (a *Adapter) Close() error {
 		return nil
 	}
 	return sock.Close()
+}
+
+// Healthy reports the adapter unhealthy once its read loop has stopped
+// because of a real socket error (see lastReadErr) — e.g. the underlying
+// SocketCAN interface went down. Surfaced to GET /health (issue #27) via
+// health.Reporter.
+func (a *Adapter) Healthy() (bool, string) {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	if a.lastReadErr != nil {
+		return false, "read loop stopped: " + a.lastReadErr.Error()
+	}
+	return true, ""
 }
 
 // WatchDevice validates d's can.message label resolves to a message in the
@@ -287,6 +307,9 @@ func (a *Adapter) readLoop(sock rawSocket) {
 				return
 			default:
 			}
+			a.mu.Lock()
+			a.lastReadErr = err
+			a.mu.Unlock()
 			a.log.Warn("can: read frame", "err", err)
 			return
 		}

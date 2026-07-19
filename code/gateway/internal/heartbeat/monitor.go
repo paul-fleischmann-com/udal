@@ -36,7 +36,22 @@ type Monitor struct {
 	interval time.Duration
 	timeout  time.Duration
 
+	// onStatusChange, if set, is called from emit alongside the broker
+	// publish for every online/offline transition (issue #27: drives the
+	// udal_devices_online gauge — incremented for Touch's online
+	// transitions, decremented for Sweep's timeout-driven offline ones).
+	onStatusChange func(deviceID string, online bool)
+
 	now func() time.Time // overridable in tests
+}
+
+// Option configures a Monitor constructed by NewMonitor.
+type Option func(*Monitor)
+
+// WithOnStatusChange sets the callback invoked on every online/offline
+// transition (issue #27). Must not block.
+func WithOnStatusChange(fn func(deviceID string, online bool)) Option {
+	return func(m *Monitor) { m.onStatusChange = fn }
 }
 
 // NewMonitor returns a Monitor that considers a device offline once it's
@@ -45,14 +60,18 @@ type Monitor struct {
 // accepts without error) uses DefaultInterval/DefaultTimeout instead of
 // propagating into time.NewTicker in Run, which panics on a duration <= 0
 // and would otherwise crash the whole gateway process from that goroutine.
-func NewMonitor(reg registry.Registry, broker *api.Broker, interval, timeout time.Duration) *Monitor {
+func NewMonitor(reg registry.Registry, broker *api.Broker, interval, timeout time.Duration, opts ...Option) *Monitor {
 	if interval <= 0 {
 		interval = DefaultInterval
 	}
 	if timeout <= 0 {
 		timeout = DefaultTimeout
 	}
-	return &Monitor{reg: reg, broker: broker, interval: interval, timeout: timeout, now: time.Now}
+	m := &Monitor{reg: reg, broker: broker, interval: interval, timeout: timeout, now: time.Now}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
 }
 
 // Interval returns the configured heartbeat interval — used by callers
@@ -115,6 +134,9 @@ func (m *Monitor) Sweep() error {
 
 func (m *Monitor) emit(deviceID string, s api.DeviceStatus, at time.Time) {
 	m.broker.Publish(api.PropertyUpdate{DeviceID: deviceID, Timestamp: at, Status: &s})
+	if m.onStatusChange != nil {
+		m.onStatusChange(deviceID, s == api.DeviceStatusOnline)
+	}
 }
 
 // Run calls Sweep on the configured interval until ctx is done. Intended
