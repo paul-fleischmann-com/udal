@@ -27,6 +27,14 @@ DEVICE_POLL_INTERVAL_SECONDS = 3.0
 #: Caps memory/DOM growth for a long-running telemetry watch.
 MAX_TELEMETRY_ROWS = 50
 
+#: How often watch_telemetry re-checks whether it should stop, even if no
+#: new update has arrived from the stream. Without this, a device that
+#: goes quiet while being watched would leave the background task blocked
+#: forever inside the stream read, leaking the task and its underlying
+#: gRPC connection whenever the user switches devices or clicks Stop
+#: (code review finding, issue #19).
+TELEMETRY_STOP_CHECK_SECONDS = 2.0
+
 
 def _client() -> Client:
     return Client(ClientConfig(gateway_url=GATEWAY_URL, api_key=API_KEY))
@@ -72,7 +80,10 @@ class DashboardState(rx.State):
     @rx.event
     def select_device(self, device_id: str) -> None:
         """Switches the property/command/telemetry panels to device_id,
-        clearing anything left over from a previously selected device."""
+        clearing anything left over from a previously selected device.
+        Flipping watching_telemetry to False here is enough to stop a
+        telemetry watch for the previous device — see watch_telemetry's
+        own doc comment for why that's not always immediate."""
         self.selected_device_id = device_id
         self.property_path = ""
         self.property_value = ""
@@ -108,37 +119,42 @@ class DashboardState(rx.State):
     async def watch_devices(self) -> None:
         """Polls ListDevices every DEVICE_POLL_INTERVAL_SECONDS until
         stop_watching_devices is called. Idempotent — a second click while
-        already running is a no-op, not a second concurrent poll loop."""
+        already running is a no-op, not a second concurrent poll loop.
+        Opens one Client for the whole watch session (not one per poll) —
+        an earlier version dialed a fresh gRPC channel every single tick,
+        paying a full connection setup/teardown cost every
+        DEVICE_POLL_INTERVAL_SECONDS for no reason (code review finding,
+        issue #19)."""
         async with self:
             if self.watching_devices:
                 return
             self.watching_devices = True
         try:
-            while True:
-                async with self:
-                    if not self.watching_devices:
-                        return
-                try:
-                    async with _client() as client:
+            async with _client() as client:
+                while True:
+                    async with self:
+                        if not self.watching_devices:
+                            return
+                    try:
                         devices = await client.list_devices()
-                except UdalError as exc:
-                    async with self:
-                        self.devices_error = str(exc)
-                else:
-                    async with self:
-                        self.devices = [
-                            DeviceRow(
-                                id=d.id,
-                                name=d.name,
-                                capability=d.capability,
-                                transport=d.transport,
-                                status=d.status,
-                                last_seen=d.last_seen.strftime("%Y-%m-%d %H:%M:%S UTC"),
-                            )
-                            for d in devices
-                        ]
-                        self.devices_error = ""
-                await asyncio.sleep(DEVICE_POLL_INTERVAL_SECONDS)
+                    except UdalError as exc:
+                        async with self:
+                            self.devices_error = str(exc)
+                    else:
+                        async with self:
+                            self.devices = [
+                                DeviceRow(
+                                    id=d.id,
+                                    name=d.name,
+                                    capability=d.capability,
+                                    transport=d.transport,
+                                    status=d.status,
+                                    last_seen=d.last_seen.strftime("%Y-%m-%d %H:%M:%S UTC"),
+                                )
+                                for d in devices
+                            ]
+                            self.devices_error = ""
+                    await asyncio.sleep(DEVICE_POLL_INTERVAL_SECONDS)
         finally:
             async with self:
                 self.watching_devices = False
@@ -147,17 +163,18 @@ class DashboardState(rx.State):
     def stop_watching_devices(self) -> None:
         self.watching_devices = False
 
-    async def _refresh_property(self) -> None:
-        """Fetches the currently-selected property and stores it — shared
-        by read_property and write_property (the latter re-reads after a
-        successful write, to show the value actually now stored, not just
-        an echo of what was requested). A plain async method, not itself
-        an @rx.event, specifically so it can be awaited directly from
+    async def _refresh_property(self, device_id: str, path: str) -> None:
+        """Fetches device_id's current value at path and stores it —
+        shared by read_property and write_property (the latter re-reads
+        after a successful write, to show the value actually now stored,
+        not just an echo of what was requested). Takes device_id/path as
+        explicit arguments rather than re-reading self.selected_device_id/
+        self.property_path, so a user editing the path field while a write
+        is still in flight can't make the post-write refresh silently
+        target a different property than the one just written (code
+        review finding, issue #19). A plain async method, not itself an
+        @rx.event, specifically so it can be awaited directly from
         write_property without going through Reflex's event dispatch."""
-        async with self:
-            device_id, path = self.selected_device_id, self.property_path
-        if not device_id or not path:
-            return
         try:
             async with _client() as client:
                 value = await client.get_property(device_id, path)
@@ -172,7 +189,11 @@ class DashboardState(rx.State):
 
     @rx.event(background=True)
     async def read_property(self) -> None:
-        await self._refresh_property()
+        async with self:
+            device_id, path = self.selected_device_id, self.property_path
+        if not device_id or not path:
+            return
+        await self._refresh_property(device_id, path)
 
     @rx.event(background=True)
     async def write_property(self) -> None:
@@ -190,9 +211,9 @@ class DashboardState(rx.State):
             async with self:
                 self.property_error = str(exc)
             return
-        async with self:
-            self.property_error = ""
-        await self._refresh_property()
+        # _refresh_property sets property_error itself (cleared on success,
+        # set on failure) — no need to clear it here first too.
+        await self._refresh_property(device_id, path)
 
     @rx.event(background=True)
     async def send_command(self) -> None:
@@ -207,6 +228,17 @@ class DashboardState(rx.State):
         except json.JSONDecodeError as exc:
             async with self:
                 self.command_error = f"invalid JSON params: {exc}"
+                self.command_result = ""
+            return
+        if not isinstance(params, dict):
+            # json.loads accepts any JSON value (a bare number, string,
+            # list, ...), not just objects — Client.send_command needs a
+            # dict (it calls Struct.update(params), which raises an
+            # uncaught AttributeError for anything else, silently killing
+            # this background task with no feedback in the UI — code
+            # review finding, issue #19).
+            async with self:
+                self.command_error = 'params must be a JSON object, e.g. {"key": "value"}'
                 self.command_result = ""
             return
         try:
@@ -226,8 +258,21 @@ class DashboardState(rx.State):
         """Streams live property updates for the selected device via
         Subscribe — the one part of this dashboard that's a true server
         push, not polling (see DEVICE_POLL_INTERVAL_SECONDS's doc comment
-        for why the device list can't work the same way)."""
+        for why the device list can't work the same way). Idempotent, like
+        watch_devices — a second start while already running is a no-op.
+
+        Manually pulls from the stream with a bounded wait
+        (TELEMETRY_STOP_CHECK_SECONDS) instead of a plain `async for`, so
+        the stop flag is re-checked periodically even when the watched
+        device has gone quiet — a plain `async for` only re-checks the
+        flag when a new item actually arrives, so switching devices (or
+        clicking Stop) while watching a quiet device would otherwise leave
+        this task blocked forever, leaking its gRPC stream (code review
+        finding, issue #19, independently confirmed by four review
+        angles)."""
         async with self:
+            if self.watching_telemetry:
+                return
             device_id = self.selected_device_id
             if not device_id:
                 return
@@ -235,12 +280,30 @@ class DashboardState(rx.State):
             self.telemetry_error = ""
         try:
             async with _client() as client:
-                async for update in client.subscribe(device_id):
-                    async with self:
-                        if not self.watching_telemetry or self.selected_device_id != device_id:
-                            return
-                        row = f"{update.timestamp:%H:%M:%S} {update.property_path} = {update.value}"
-                        self.telemetry = [row, *self.telemetry][:MAX_TELEMETRY_ROWS]
+                stream = client.subscribe(device_id)
+                try:
+                    while True:
+                        async with self:
+                            if not self.watching_telemetry or self.selected_device_id != device_id:
+                                return
+                        try:
+                            update = await asyncio.wait_for(
+                                anext(stream), timeout=TELEMETRY_STOP_CHECK_SECONDS
+                            )
+                        except TimeoutError:
+                            continue  # no update yet — loop back to recheck the stop flag
+                        except StopAsyncIteration:
+                            return  # stream ended
+                        async with self:
+                            if not self.watching_telemetry or self.selected_device_id != device_id:
+                                return
+                            row = (
+                                f"{update.timestamp:%H:%M:%S} "
+                                f"{update.property_path} = {update.value}"
+                            )
+                            self.telemetry = [row, *self.telemetry][:MAX_TELEMETRY_ROWS]
+                finally:
+                    await stream.aclose()
         except UdalError as exc:
             async with self:
                 self.telemetry_error = str(exc)

@@ -1,10 +1,47 @@
 """UDAL reference dashboard (issue #19): device list, property browser,
 command dispatch, and live telemetry — built on the Python SDK (#18)."""
 
+from typing import Any
+
 import reflex as rx
 
 from dashboard.state import DashboardState, DeviceRow
 from rxconfig import config
+
+
+def _error_callout(message: str) -> rx.Component:
+    """A red callout shown only while message is non-empty — the same
+    error-display shape repeated across every panel below (code review
+    finding, issue #19: collapsed 4 copy-pasted rx.cond/rx.callout blocks
+    into this one helper). Typed as a plain str/bool/Any below, not
+    rx.Var[...] — every call site passes a DashboardState class attribute
+    access (e.g. DashboardState.devices_error), which mypy's own inference
+    already treats as the plain underlying type, not a wrapped Var."""
+    return rx.cond(message != "", rx.callout(message, color_scheme="red", size="1"))
+
+
+def _labeled_value(label: str, value: str) -> rx.Component:
+    """ "<label> <code>value</code>", shown only while value is non-empty —
+    shared by the property browser's "Value:" and the command panel's
+    "Result:" displays (code review finding, issue #19)."""
+    return rx.cond(value != "", rx.text(label, rx.code(value)))
+
+
+def _watch_toggle_button(
+    watching: bool, start_label: str, on_start: Any, on_stop: Any
+) -> rx.Component:
+    """A button that reads "<start_label>" and starts on_start while not
+    watching, or "Stop" and starts on_stop while watching — the shared
+    shape behind "Watch devices"/"Stop watching" and "Start watching"/
+    "Stop" (code review finding, issue #19). on_start/on_stop are typed
+    Any: Reflex's own event-handler type varies by decoration
+    (EventNamespace for a background handler, EventHandler for a plain
+    one) in ways its stubs don't expose a common supertype for."""
+    return rx.cond(
+        watching,
+        rx.button("Stop", on_click=on_stop, color_scheme="red", variant="soft", size="2"),
+        rx.button(start_label, on_click=on_start, size="2"),
+    )
 
 
 def _device_row(row: DeviceRow) -> rx.Component:
@@ -38,28 +75,16 @@ def device_list() -> rx.Component:
         rx.hstack(
             rx.heading("Devices", size="5"),
             rx.spacer(),
-            rx.cond(
+            _watch_toggle_button(
                 DashboardState.watching_devices,
-                rx.button(
-                    "Stop watching",
-                    on_click=DashboardState.stop_watching_devices,
-                    color_scheme="red",
-                    variant="soft",
-                    size="2",
-                ),
-                rx.button(
-                    "Watch devices",
-                    on_click=DashboardState.watch_devices,
-                    size="2",
-                ),
+                "Watch devices",
+                DashboardState.watch_devices,
+                DashboardState.stop_watching_devices,
             ),
             width="100%",
             align="center",
         ),
-        rx.cond(
-            DashboardState.devices_error != "",
-            rx.callout(DashboardState.devices_error, color_scheme="red", size="1"),
-        ),
+        _error_callout(DashboardState.devices_error),
         rx.table.root(
             rx.table.header(
                 rx.table.row(
@@ -99,10 +124,7 @@ def property_browser() -> rx.Component:
             rx.button("Read", on_click=DashboardState.read_property),
             width="100%",
         ),
-        rx.cond(
-            DashboardState.property_value != "",
-            rx.text("Value: ", rx.code(DashboardState.property_value)),
-        ),
+        _labeled_value("Value: ", DashboardState.property_value),
         rx.hstack(
             rx.input(
                 placeholder="new value (bool/int/float auto-detected, else string)",
@@ -113,10 +135,7 @@ def property_browser() -> rx.Component:
             rx.button("Write", on_click=DashboardState.write_property, color_scheme="grass"),
             width="100%",
         ),
-        rx.cond(
-            DashboardState.property_error != "",
-            rx.callout(DashboardState.property_error, color_scheme="red", size="1"),
-        ),
+        _error_callout(DashboardState.property_error),
         width="100%",
         spacing="2",
     )
@@ -141,14 +160,8 @@ def command_dispatch() -> rx.Component:
             width="100%",
         ),
         rx.button("Send", on_click=DashboardState.send_command),
-        rx.cond(
-            DashboardState.command_result != "",
-            rx.text("Result: ", rx.code(DashboardState.command_result)),
-        ),
-        rx.cond(
-            DashboardState.command_error != "",
-            rx.callout(DashboardState.command_error, color_scheme="red", size="1"),
-        ),
+        _labeled_value("Result: ", DashboardState.command_result),
+        _error_callout(DashboardState.command_error),
         width="100%",
         spacing="2",
     )
@@ -159,24 +172,16 @@ def live_telemetry() -> rx.Component:
         rx.hstack(
             rx.heading("Live Telemetry", size="4"),
             rx.spacer(),
-            rx.cond(
+            _watch_toggle_button(
                 DashboardState.watching_telemetry,
-                rx.button(
-                    "Stop",
-                    on_click=DashboardState.stop_watching_telemetry,
-                    color_scheme="red",
-                    variant="soft",
-                    size="2",
-                ),
-                rx.button("Start watching", on_click=DashboardState.watch_telemetry, size="2"),
+                "Start watching",
+                DashboardState.watch_telemetry,
+                DashboardState.stop_watching_telemetry,
             ),
             width="100%",
             align="center",
         ),
-        rx.cond(
-            DashboardState.telemetry_error != "",
-            rx.callout(DashboardState.telemetry_error, color_scheme="red", size="1"),
-        ),
+        _error_callout(DashboardState.telemetry_error),
         rx.scroll_area(
             rx.vstack(
                 rx.foreach(

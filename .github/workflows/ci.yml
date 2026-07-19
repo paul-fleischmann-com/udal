@@ -329,24 +329,45 @@ jobs:
         working-directory: dashboard
     steps:
       - uses: actions/checkout@v4
+      # dashboard/ was added in issue #19, but the "reflex" path filter
+      # above also matches code/sdk/python/** (the dashboard depends on
+      # it, issue #18) — a push to any branch/commit checked out from
+      # *before* dashboard/ existed (this workflow triggers on pushes to
+      # every branch, and a push checks out the exact pushed SHA, not a
+      # merge with current main) would still match that filter and hit
+      # this job, with no dashboard/pyproject.toml to install (code
+      # review finding, issue #19: an earlier version of this PR removed
+      # this exact guard, reasoning it was only needed until dashboard/
+      # existed — true for post-merge commits, but not for pre-existing
+      # branches still checked out at an older commit). hashFiles() only
+      # works after checkout (it reads the runner's filesystem), so this
+      # is a per-step `if`, not a job-level one — harmless once
+      # dashboard/pyproject.toml exists in the checked-out commit, which
+      # it does for every commit from this PR onward.
       - uses: actions/setup-python@v5
+        if: hashFiles('dashboard/pyproject.toml') != ''
         with:
           python-version: "3.12"
           cache: pip
 
       - name: Install Python SDK (dashboard depends on it, issue #18)
+        if: hashFiles('dashboard/pyproject.toml') != ''
         run: pip install -e ../code/sdk/python
 
       - name: Install dependencies
+        if: hashFiles('dashboard/pyproject.toml') != ''
         run: pip install -e ".[dev]"
 
       - name: Lint (ruff)
+        if: hashFiles('dashboard/pyproject.toml') != ''
         run: ruff check .
 
       - name: Type check (mypy)
+        if: hashFiles('dashboard/pyproject.toml') != ''
         run: mypy .
 
       - name: Reflex build check
+        if: hashFiles('dashboard/pyproject.toml') != ''
         run: reflex export --no-zip 2>&1 | grep -v "^$" || true
 
 # ─── TypeScript SDK ───────────────────────────────────────────────────────────

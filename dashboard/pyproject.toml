@@ -11,13 +11,16 @@ requires-python = ">=3.12"
 license = { text = "Apache-2.0" }
 dependencies = [
     "reflex>=0.9",
-    # Not declared as a path/URL dependency (pure setuptools doesn't
-    # resolve relative paths portably) — install it explicitly first, see
-    # README.md/CONTRIBUTING.md and .github/workflows/ci.yml's reflex-ci
-    # job, both of which run `pip install -e ../code/sdk/python` before
-    # this package's own install.
-    "udal-sdk",
 ]
+# udal-sdk (the Python SDK this dashboard imports, issue #18) is
+# deliberately *not* listed above: it isn't published to PyPI, and a bare
+# "udal-sdk" entry would still silently "resolve" if anyone ever registers
+# an unrelated package under that exact name on PyPI (dependency-confusion
+# risk, code review finding, issue #19) — verified there is currently no
+# such package. Install it explicitly first instead, see
+# README.md/CONTRIBUTING.md and .github/workflows/ci.yml's reflex-ci job,
+# both of which run `pip install -e ../code/sdk/python` before this
+# package's own install.
 
 [project.optional-dependencies]
 dev = [
