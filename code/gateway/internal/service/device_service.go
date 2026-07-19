@@ -21,7 +21,6 @@ import (
 	"github.com/paulefl/udal/code/gateway/internal/registry"
 	"github.com/paulefl/udal/code/gateway/internal/tracing"
 	"go.opentelemetry.io/otel"
-	otelcodes "go.opentelemetry.io/otel/codes"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -273,10 +272,7 @@ const commandTimeout = 10 * time.Second
 func startSpan(ctx context.Context, name string) (context.Context, func(err error)) {
 	spanCtx, span := otel.Tracer(tracing.TracerName).Start(ctx, name)
 	return spanCtx, func(err error) {
-		if err != nil {
-			span.RecordError(err)
-			span.SetStatus(otelcodes.Error, err.Error())
-		}
+		tracing.RecordError(span, err)
 		span.End()
 	}
 }
@@ -446,7 +442,13 @@ func (s *DeviceService) DeleteDevice(ctx context.Context, req *udalv1.DeleteDevi
 
 // ─── Property RPCs ────────────────────────────────────────────────────────────
 
-func (s *DeviceService) GetProperty(ctx context.Context, req *udalv1.GetPropertyRequest) (*udalv1.GetPropertyResponse, error) {
+// resp/err are named so the deferred endRouterSpan(err) below sees the
+// error of *every* exit path (including the PropertyStore fallback and the
+// value-encode step, not just the three adapter branches) — a plain local
+// routeErr variable that only the adapter branches assigned was tried
+// first and found to leave the "router" span reporting success on request
+// paths that actually failed (code review finding, issue #29).
+func (s *DeviceService) GetProperty(ctx context.Context, req *udalv1.GetPropertyRequest) (resp *udalv1.GetPropertyResponse, err error) {
 	if req.GetDeviceId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "device_id is required")
 	}
@@ -465,9 +467,8 @@ func (s *DeviceService) GetProperty(ctx context.Context, req *udalv1.GetProperty
 	}
 
 	var v api.PropertyValue
-	var routeErr error
 	routerCtx, endRouterSpan := startSpan(ctx, "router")
-	defer func() { endRouterSpan(routeErr) }()
+	defer func() { endRouterSpan(err) }()
 
 	switch {
 	case d.Transport == "mqtt" && s.mqtt != nil:
@@ -476,7 +477,6 @@ func (s *DeviceService) GetProperty(ctx context.Context, req *udalv1.GetProperty
 		endAdapterSpan(err)
 		if err != nil {
 			metrics.AdapterErrors.WithLabelValues("mqtt_adapter").Inc()
-			routeErr = err
 			return nil, mqttStatusError(err)
 		}
 	case d.Transport == "http" && s.http != nil:
@@ -485,7 +485,6 @@ func (s *DeviceService) GetProperty(ctx context.Context, req *udalv1.GetProperty
 		endAdapterSpan(err)
 		if err != nil {
 			metrics.AdapterErrors.WithLabelValues("http_adapter").Inc()
-			routeErr = err
 			return nil, httpStatusError(err)
 		}
 	case d.Transport == "can" && s.can != nil:
@@ -494,7 +493,6 @@ func (s *DeviceService) GetProperty(ctx context.Context, req *udalv1.GetProperty
 		endAdapterSpan(err)
 		if err != nil {
 			metrics.AdapterErrors.WithLabelValues("can_adapter").Inc()
-			routeErr = err
 			return nil, canStatusError(err)
 		}
 	default:
@@ -510,7 +508,9 @@ func (s *DeviceService) GetProperty(ctx context.Context, req *udalv1.GetProperty
 	return &udalv1.GetPropertyResponse{Value: pbVal}, nil
 }
 
-func (s *DeviceService) SetProperty(ctx context.Context, req *udalv1.SetPropertyRequest) (*udalv1.SetPropertyResponse, error) {
+// resp/err are named for the same reason as GetProperty's — see its doc
+// comment.
+func (s *DeviceService) SetProperty(ctx context.Context, req *udalv1.SetPropertyRequest) (resp *udalv1.SetPropertyResponse, err error) {
 	if req.GetDeviceId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "device_id is required")
 	}
@@ -548,9 +548,8 @@ func (s *DeviceService) SetProperty(ctx context.Context, req *udalv1.SetProperty
 		}
 	}
 
-	var routeErr error
 	routerCtx, endRouterSpan := startSpan(ctx, "router")
-	defer func() { endRouterSpan(routeErr) }()
+	defer func() { endRouterSpan(err) }()
 
 	if d.Transport == "http" && s.http != nil {
 		// Explicit Unimplemented rather than silently falling through to
@@ -567,11 +566,10 @@ func (s *DeviceService) SetProperty(ctx context.Context, req *udalv1.SetProperty
 
 	if d.Transport == "mqtt" && s.mqtt != nil {
 		adapterCtx, endAdapterSpan := startSpan(routerCtx, "adapter")
-		err := s.mqtt.WriteProperty(adapterCtx, req.GetDeviceId(), req.GetPropertyPath(), v)
+		err = s.mqtt.WriteProperty(adapterCtx, req.GetDeviceId(), req.GetPropertyPath(), v)
 		endAdapterSpan(err)
 		if err != nil {
 			metrics.AdapterErrors.WithLabelValues("mqtt_adapter").Inc()
-			routeErr = err
 			return nil, mqttStatusError(err)
 		}
 		// No broker.Publish here: the device's own props/{path} publish
@@ -587,11 +585,10 @@ func (s *DeviceService) SetProperty(ctx context.Context, req *udalv1.SetProperty
 
 	if d.Transport == "can" && s.can != nil {
 		adapterCtx, endAdapterSpan := startSpan(routerCtx, "adapter")
-		err := s.can.WriteProperty(adapterCtx, d, req.GetPropertyPath(), v)
+		err = s.can.WriteProperty(adapterCtx, d, req.GetPropertyPath(), v)
 		endAdapterSpan(err)
 		if err != nil {
 			metrics.AdapterErrors.WithLabelValues("can_adapter").Inc()
-			routeErr = err
 			return nil, canStatusError(err)
 		}
 		// No broker.Publish here, same reasoning as the mqtt branch above:

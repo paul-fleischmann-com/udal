@@ -120,3 +120,59 @@ func TestGetProperty_PropertyStoreFallback_RecordsRouterSpanOnlyNoAdapterSpan(t 
 		t.Errorf("spans = %+v, want no \"adapter\" span for the PropertyStore fallback route (no transport adapter is dispatched to)", spans)
 	}
 }
+
+// TestGetProperty_PropertyStoreFallbackError_RecordsErrorOnRouterSpan
+// guards against a bug a code review caught before this shipped: an
+// earlier version of GetProperty threaded a separate `routeErr` variable
+// into the deferred endRouterSpan call, but only ever assigned it inside
+// the mqtt/http/can adapter branches — the PropertyStore-fallback branch's
+// own NotFound error never reached it, so the "router" span reported
+// success for a request the client was actually told failed. GetProperty
+// was changed to use its named `err` return value directly (set by every
+// return statement, adapter branches and fallback alike) instead.
+func TestGetProperty_PropertyStoreFallbackError_RecordsErrorOnRouterSpan(t *testing.T) {
+	exp := newTestTracerProvider(t)
+	svc := newSvc()
+	reg, _ := svc.RegisterDevice(adminCtx(), &udalv1.RegisterDeviceRequest{
+		Name: "sensor", Capability: "temperature-sensor", Transport: "mqtt",
+	})
+
+	if _, err := svc.GetProperty(adminCtx(), &udalv1.GetPropertyRequest{
+		DeviceId: reg.Device.Id, PropertyPath: "never-set",
+	}); err == nil {
+		t.Fatal("GetProperty: want NotFound error for a property that was never set")
+	}
+
+	spans := exp.GetSpans()
+	router, ok := spanNamed(spans, "router")
+	if !ok || router.Status.Code.String() != "Error" {
+		t.Errorf("router span status = %+v, want Error (PropertyStore-fallback NotFound must not look like a successful route)", router.Status)
+	}
+}
+
+// TestSetProperty_HTTPUnimplemented_RecordsErrorOnRouterSpan is
+// SetProperty's counterpart to the GetProperty regression above: its
+// http-transport early return (SetProperty over HTTP isn't supported) is
+// also reached after the "router" span is already open, and was likewise
+// silently recorded as successful before the named-return fix.
+func TestSetProperty_HTTPUnimplemented_RecordsErrorOnRouterSpan(t *testing.T) {
+	exp := newTestTracerProvider(t)
+	fake := &fakeHTTPAdapter{}
+	svc := newSvcWithHTTP(fake)
+	reg, _ := svc.RegisterDevice(adminCtx(), &udalv1.RegisterDeviceRequest{
+		Name: "sensor", Capability: "temperature-sensor", Transport: "http",
+	})
+
+	if _, err := svc.SetProperty(adminCtx(), &udalv1.SetPropertyRequest{
+		DeviceId: reg.Device.Id, PropertyPath: "temperature",
+		Value: &udalv1.PropertyValue{Value: &udalv1.PropertyValue_FloatVal{FloatVal: 1}},
+	}); err == nil {
+		t.Fatal("SetProperty: want Unimplemented error for an http-transport device")
+	}
+
+	spans := exp.GetSpans()
+	router, ok := spanNamed(spans, "router")
+	if !ok || router.Status.Code.String() != "Error" {
+		t.Errorf("router span status = %+v, want Error", router.Status)
+	}
+}

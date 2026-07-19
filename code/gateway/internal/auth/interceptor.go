@@ -6,7 +6,6 @@ import (
 
 	"github.com/paulefl/udal/code/gateway/internal/tracing"
 	"go.opentelemetry.io/otel"
-	otelcodes "go.opentelemetry.io/otel/codes"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -105,10 +104,7 @@ func (a *Authenticator) authenticateTraced(ctx context.Context) (Identity, error
 	spanCtx, span := otel.Tracer(tracing.TracerName).Start(ctx, "auth")
 	defer span.End()
 	id, err := a.authenticate(spanCtx)
-	if err != nil {
-		span.RecordError(err)
-		span.SetStatus(otelcodes.Error, err.Error())
-	}
+	tracing.RecordError(span, err)
 	return id, err
 }
 

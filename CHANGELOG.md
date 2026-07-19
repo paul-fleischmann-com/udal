@@ -25,7 +25,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `DeviceService.GetProperty`/`SetProperty` wrap transport-adapter dispatch in
   nested `"router"`/`"adapter"` spans (only for those two RPCs, and only when
   actually routed to a transport adapter — the `PropertyStore` fallback gets a
-  `"router"` span but no `"adapter"` span). `UDAL_OTEL_ENDPOINT` accepts either
+  `"router"` span but no `"adapter"` span), using named return values so the
+  `"router"` span's error status reflects every exit path (adapter dispatch,
+  the `PropertyStore` fallback, and the HTTP-unsupported/encode-failure
+  paths alike), not just the transport-adapter branches. `UDAL_OTEL_ENDPOINT` accepts either
   a bare `host:port` (plaintext OTLP/gRPC) or a full URL with scheme (TLS via
   `https://`). The provider is flushed via `Shutdown` during graceful
   shutdown, after the HTTP servers stop, so any spans still buffered in the

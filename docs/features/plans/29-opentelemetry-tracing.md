@@ -112,3 +112,66 @@ und macht `trace_id` erstmals tatsächlich mit einer OTEL-Span-ID
 
 `go build ./...`, `go vet ./...`, `gofmt -l .` und `go test -race ./...`
 sind grün.
+
+## Nachgezogen aus dem Review (vor PR-Eröffnung)
+
+Ein High-Effort-Multi-Agent-Review (8 Finder-Winkel + Verifikation) lief
+gegen den vollständigen Diff, bevor die PR eröffnet wurde. Ein Finding —
+unabhängig von fünf der acht Finder-Winkel gefunden — war ein echter
+Korrektheitsfehler und wurde behoben; zwei kleinere Duplikations-Findings
+wurden ebenfalls behoben, der Rest (Interceptor-Reihenfolge nur per
+Kommentar statt Test abgesichert, geteiltes 5s-Shutdown-Deadline-Budget,
+zwei strukturell identische ctx-wrappende Stream-Typen) bewusst als
+Low-Severity/bestehende Konvention belassen:
+
+- **`routeErr` wurde nicht auf jedem Fehlerpfad gesetzt, der innerhalb der
+  bereits offenen `"router"`-Span lief** (höchste Schwere, unabhängig von
+  fünf Review-Winkeln gefunden): `GetProperty`/`SetProperty` fädelten
+  ursprünglich eine separate `routeErr`-Variable in den deferred
+  `endRouterSpan`-Aufruf, aber nur die drei Adapter-Branches (mqtt/http/can)
+  setzten sie tatsächlich. Der `PropertyStore`-Fallback (kein Adapter
+  konfiguriert — der häufigste Fall), der `toProtoValue`-Encode-Fehlerpfad
+  in `GetProperty`, sowie `SetProperty`s explizites HTTP-Unimplemented und
+  sein eigener `PropertyStore.Set`-Fallback gaben allesamt einen Fehler an
+  den Client zurück, ohne `routeErr` je zu setzen — die `"router"`-Span
+  meldete in all diesen Fällen fälschlich Erfolg. In einem Trace-Backend
+  (Jaeger/Tempo) hätte das genau die Anfragen, für die F-24s Tracing
+  eigentlich Fehler sichtbar machen soll, als grüne, gesunde Spans gezeigt.
+  Fix: `GetProperty`/`SetProperty` nutzen jetzt benannte Rückgabewerte
+  (`resp`, `err`) und `defer func() { endRouterSpan(err) }()` — jede
+  `return`-Anweisung, auch die bislang übersehenen, setzt automatisch den
+  tatsächlichen Rückgabefehler, den die Span sieht; die separate
+  `routeErr`-Variable entfällt komplett, ein struktureller statt
+  Pflaster-Fix. Zwei neue Regressionstests
+  (`TestGetProperty_PropertyStoreFallbackError_RecordsErrorOnRouterSpan`,
+  `TestSetProperty_HTTPUnimplemented_RecordsErrorOnRouterSpan`) verifizieren
+  genau die beiden am leichtesten reproduzierbaren der vier betroffenen
+  Pfade (die übrigen zwei — `toProtoValue`-Encode-Fehler,
+  `PropertyStore.Set`-Fehler — sind mit den vorhandenen In-Memory-Test-
+  Fakes nicht ohne Weiteres provozierbar, sind aber durch denselben
+  strukturellen Fix mitbehoben).
+- **Span-Fehler-Aufzeichnung dreifach unabhängig reimplementiert, mit
+  Message-Format-Drift** (zwei Review-Winkel unabhängig gefunden):
+  `tracing.Interceptor`s `recordResult`, `auth.authenticateTraced` und
+  `service.startSpan` bauten je ihre eigene
+  `span.RecordError`+`span.SetStatus`-Sequenz — `recordResult` nutzte dabei
+  `grpcstatus.Convert(err).Message()` (reiner Message-Text), die anderen
+  beiden `err.Error()` (vollständiger `"rpc error: code = ... desc = ..."`-
+  String) — eine stille Inkonsistenz, die kein Test abdeckte. Fix: neue
+  exportierte `tracing.RecordError(span, err)`, von allen drei Stellen
+  genutzt, vereinheitlicht auf `err.Error()`.
+- **Uncached `otel.Tracer(name)`-Lookups pro Span** wurden zunächst als
+  Efficiency-Fix mit einer paketweiten `var tracer = otel.Tracer(...)`
+  behoben, dann aber wieder verworfen: `go test` deckte auf, dass OTel's
+  globaler Delegations-Mechanismus (`internal/global`) einen bereits
+  vergebenen `Tracer`-Proxy nur beim *ersten* `otel.SetTracerProvider`-Aufruf
+  pro Prozess umhängt (`sync.Once` intern) — jeder Test, der pro Testfall
+  einen frischen `TracerProvider` registriert (das etablierte Muster in
+  `internal/tracing`, `internal/auth` und `internal/service`s Span-Tests),
+  hätte mit einem gecachten Tracer-Handle nur beim allerersten `SetTracer
+  Provider`-Aufruf im gesamten Testbinary tatsächlich Spans aufgezeichnet
+  — alle späteren Testfälle hätten still leere Exporter gesehen. Da dasselbe
+  Muster potenziell auch in einer zukünftigen Produktions-Situation mit
+  mehrfachem `SetTracerProvider` (z. B. Hot-Reload der Tracing-Config)
+  denselben Fehler hätte, wurde die Optimierung verworfen statt nur für
+  Tests umgangen — `otel.Tracer(name)` bleibt bewusst ein Aufruf pro Span.

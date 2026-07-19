@@ -7,7 +7,6 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
-	grpcstatus "google.golang.org/grpc/status"
 )
 
 // Interceptor starts the root "api" span for every gRPC request (also
@@ -29,7 +28,7 @@ func (Interceptor) UnaryInterceptor(ctx context.Context, req any, info *grpc.Una
 	ctx, span := otel.Tracer(TracerName).Start(ctx, "api")
 	defer span.End()
 	resp, err := handler(ctx, req)
-	recordResult(span, err)
+	RecordError(span, err)
 	return resp, err
 }
 
@@ -38,15 +37,22 @@ func (Interceptor) StreamInterceptor(srv any, ss grpc.ServerStream, info *grpc.S
 	ctx, span := otel.Tracer(TracerName).Start(ss.Context(), "api")
 	defer span.End()
 	err := handler(srv, &tracedStream{ServerStream: ss, ctx: ctx})
-	recordResult(span, err)
+	RecordError(span, err)
 	return err
 }
 
-func recordResult(span trace.Span, err error) {
-	if err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, grpcstatus.Convert(err).Message())
+// RecordError marks span as failed (with err's message) if err is
+// non-nil — the shared "how do we record a failure on a span" policy for
+// every span this gateway creates (Interceptor's "api" span here,
+// auth.Authenticator's "auth" span, service.DeviceService's "router"/
+// "adapter" spans), so all four report failures the same way instead of
+// three independent, slightly-diverging reimplementations.
+func RecordError(span trace.Span, err error) {
+	if err == nil {
+		return
 	}
+	span.RecordError(err)
+	span.SetStatus(codes.Error, err.Error())
 }
 
 // tracedStream overrides Context() so downstream handlers (and the auth/
