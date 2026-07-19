@@ -5,6 +5,9 @@ import (
 	"testing"
 
 	"github.com/paulefl/udal/code/gateway/internal/auth"
+	"go.opentelemetry.io/otel"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -67,5 +70,59 @@ func TestUnaryInterceptor_MTLSTakesPriorityOverAPIKey(t *testing.T) {
 	id := resp.(auth.Identity)
 	if id.Role != auth.RoleDevice || id.Subject != "sensor-01" {
 		t.Errorf("expected mTLS identity to win, got %+v", id)
+	}
+}
+
+// newTestTracerProvider registers a TracerProvider that exports
+// synchronously into an in-memory recorder, mirroring
+// internal/tracing/interceptor_test.go's helper — lets these tests assert
+// on the "auth" span (req42.adoc F-24, issue #29) that authenticateTraced
+// creates around every authenticate call.
+func newTestTracerProvider(t *testing.T) *tracetest.InMemoryExporter {
+	t.Helper()
+	exp := tracetest.NewInMemoryExporter()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exp))
+	prev := otel.GetTracerProvider()
+	otel.SetTracerProvider(tp)
+	t.Cleanup(func() {
+		_ = tp.Shutdown(context.Background())
+		otel.SetTracerProvider(prev)
+	})
+	return exp
+}
+
+func TestUnaryInterceptor_ValidAPIKey_RecordsAuthSpan(t *testing.T) {
+	exp := newTestTracerProvider(t)
+	a := newAuthenticatorWithKey(t, "svc-1", auth.RoleOperator, "the-key")
+	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs("x-api-key", "the-key"))
+
+	if _, err := a.UnaryInterceptor(ctx, nil, &grpc.UnaryServerInfo{}, echoHandler); err != nil {
+		t.Fatalf("UnaryInterceptor: %v", err)
+	}
+
+	spans := exp.GetSpans()
+	if len(spans) != 1 || spans[0].Name != "auth" {
+		t.Fatalf("spans = %+v, want exactly one named \"auth\"", spans)
+	}
+	if spans[0].Status.Code.String() == "Error" {
+		t.Errorf("span status = Error, want Unset/Ok for a successful authentication")
+	}
+}
+
+func TestUnaryInterceptor_InvalidAPIKey_RecordsErrorOnAuthSpan(t *testing.T) {
+	exp := newTestTracerProvider(t)
+	a := newAuthenticatorWithKey(t, "svc-1", auth.RoleOperator, "the-key")
+	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs("x-api-key", "wrong-key"))
+
+	if _, err := a.UnaryInterceptor(ctx, nil, &grpc.UnaryServerInfo{}, echoHandler); err == nil {
+		t.Fatal("UnaryInterceptor: want error for invalid API key")
+	}
+
+	spans := exp.GetSpans()
+	if len(spans) != 1 || spans[0].Name != "auth" {
+		t.Fatalf("spans = %+v, want exactly one named \"auth\"", spans)
+	}
+	if spans[0].Status.Code.String() != "Error" {
+		t.Errorf("span status = %v, want Error for a failed authentication", spans[0].Status.Code)
 	}
 }

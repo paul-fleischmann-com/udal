@@ -4,6 +4,8 @@ import (
 	"context"
 	"strings"
 
+	"github.com/paulefl/udal/code/gateway/internal/tracing"
+	"go.opentelemetry.io/otel"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -70,7 +72,7 @@ func (a *Authenticator) authenticate(ctx context.Context) (Identity, error) {
 // Identity in the context passed to the handler (and, transitively, to
 // Authorize calls made from within it).
 func (a *Authenticator) UnaryInterceptor(ctx context.Context, req any, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
-	id, err := a.authenticate(ctx)
+	id, err := a.authenticateTraced(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -80,7 +82,7 @@ func (a *Authenticator) UnaryInterceptor(ctx context.Context, req any, _ *grpc.U
 // StreamInterceptor is the streaming-RPC equivalent of UnaryInterceptor,
 // needed for Subscribe.
 func (a *Authenticator) StreamInterceptor(srv any, ss grpc.ServerStream, _ *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-	id, err := a.authenticate(ss.Context())
+	id, err := a.authenticateTraced(ss.Context())
 	if err != nil {
 		return err
 	}
@@ -88,6 +90,22 @@ func (a *Authenticator) StreamInterceptor(srv any, ss grpc.ServerStream, _ *grpc
 		ServerStream: ss,
 		ctx:          ContextWithIdentity(ss.Context(), id),
 	})
+}
+
+// authenticateTraced wraps authenticate in an "auth" span (req42.adoc F-24,
+// issue #29) — a short-lived child of whatever span is active in ctx (the
+// "api" span tracing.Interceptor started, since it runs before this
+// interceptor in the chain — see cmd/gateway/main.go). Deliberately not
+// returned/propagated into the context handler() eventually runs with: the
+// span ends here, so a later "router" span (service.DeviceService) nests
+// as api's next child, a sibling of "auth" in the trace tree, not a
+// descendant of an already-ended span.
+func (a *Authenticator) authenticateTraced(ctx context.Context) (Identity, error) {
+	spanCtx, span := otel.Tracer(tracing.TracerName).Start(ctx, "auth")
+	defer span.End()
+	id, err := a.authenticate(spanCtx)
+	tracing.RecordError(span, err)
+	return id, err
 }
 
 // authenticatedStream overrides Context() so downstream handlers observe the

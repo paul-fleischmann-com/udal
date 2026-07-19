@@ -19,6 +19,8 @@ import (
 	"github.com/paulefl/udal/code/gateway/internal/capability"
 	"github.com/paulefl/udal/code/gateway/internal/metrics"
 	"github.com/paulefl/udal/code/gateway/internal/registry"
+	"github.com/paulefl/udal/code/gateway/internal/tracing"
+	"go.opentelemetry.io/otel"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -258,6 +260,23 @@ func canStatusError(err error) error {
 // default for now.
 const commandTimeout = 10 * time.Second
 
+// ─── Tracing helper ───────────────────────────────────────────────────────────
+
+// startSpan starts a span named name as a child of ctx's active span
+// (req42.adoc F-24, issue #29) and returns a matching end func the caller
+// must invoke exactly once, with the operation's error (nil for success).
+// Used for GetProperty/SetProperty's "router" and "adapter" spans — the
+// only two RPCs that actually dispatch to a transport adapter, unlike
+// tracing.Interceptor's "api" span and auth.Authenticator's "auth" span,
+// which every RPC gets.
+func startSpan(ctx context.Context, name string) (context.Context, func(err error)) {
+	spanCtx, span := otel.Tracer(tracing.TracerName).Start(ctx, name)
+	return spanCtx, func(err error) {
+		tracing.RecordError(span, err)
+		span.End()
+	}
+}
+
 // ─── Authorization helpers ────────────────────────────────────────────────────
 
 // authorize checks the caller (resolved by the AuthN interceptor and stored
@@ -423,7 +442,13 @@ func (s *DeviceService) DeleteDevice(ctx context.Context, req *udalv1.DeleteDevi
 
 // ─── Property RPCs ────────────────────────────────────────────────────────────
 
-func (s *DeviceService) GetProperty(ctx context.Context, req *udalv1.GetPropertyRequest) (*udalv1.GetPropertyResponse, error) {
+// resp/err are named so the deferred endRouterSpan(err) below sees the
+// error of *every* exit path (including the PropertyStore fallback and the
+// value-encode step, not just the three adapter branches) — a plain local
+// routeErr variable that only the adapter branches assigned was tried
+// first and found to leave the "router" span reporting success on request
+// paths that actually failed (code review finding, issue #29).
+func (s *DeviceService) GetProperty(ctx context.Context, req *udalv1.GetPropertyRequest) (resp *udalv1.GetPropertyResponse, err error) {
 	if req.GetDeviceId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "device_id is required")
 	}
@@ -442,21 +467,30 @@ func (s *DeviceService) GetProperty(ctx context.Context, req *udalv1.GetProperty
 	}
 
 	var v api.PropertyValue
+	routerCtx, endRouterSpan := startSpan(ctx, "router")
+	defer func() { endRouterSpan(err) }()
+
 	switch {
 	case d.Transport == "mqtt" && s.mqtt != nil:
-		v, err = s.mqtt.ReadProperty(ctx, req.GetDeviceId(), req.GetPropertyPath())
+		adapterCtx, endAdapterSpan := startSpan(routerCtx, "adapter")
+		v, err = s.mqtt.ReadProperty(adapterCtx, req.GetDeviceId(), req.GetPropertyPath())
+		endAdapterSpan(err)
 		if err != nil {
 			metrics.AdapterErrors.WithLabelValues("mqtt_adapter").Inc()
 			return nil, mqttStatusError(err)
 		}
 	case d.Transport == "http" && s.http != nil:
-		v, err = s.http.ReadProperty(ctx, d, req.GetPropertyPath())
+		adapterCtx, endAdapterSpan := startSpan(routerCtx, "adapter")
+		v, err = s.http.ReadProperty(adapterCtx, d, req.GetPropertyPath())
+		endAdapterSpan(err)
 		if err != nil {
 			metrics.AdapterErrors.WithLabelValues("http_adapter").Inc()
 			return nil, httpStatusError(err)
 		}
 	case d.Transport == "can" && s.can != nil:
-		v, err = s.can.ReadProperty(ctx, d, req.GetPropertyPath())
+		adapterCtx, endAdapterSpan := startSpan(routerCtx, "adapter")
+		v, err = s.can.ReadProperty(adapterCtx, d, req.GetPropertyPath())
+		endAdapterSpan(err)
 		if err != nil {
 			metrics.AdapterErrors.WithLabelValues("can_adapter").Inc()
 			return nil, canStatusError(err)
@@ -474,7 +508,9 @@ func (s *DeviceService) GetProperty(ctx context.Context, req *udalv1.GetProperty
 	return &udalv1.GetPropertyResponse{Value: pbVal}, nil
 }
 
-func (s *DeviceService) SetProperty(ctx context.Context, req *udalv1.SetPropertyRequest) (*udalv1.SetPropertyResponse, error) {
+// resp/err are named for the same reason as GetProperty's — see its doc
+// comment.
+func (s *DeviceService) SetProperty(ctx context.Context, req *udalv1.SetPropertyRequest) (resp *udalv1.SetPropertyResponse, err error) {
 	if req.GetDeviceId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "device_id is required")
 	}
@@ -512,6 +548,9 @@ func (s *DeviceService) SetProperty(ctx context.Context, req *udalv1.SetProperty
 		}
 	}
 
+	routerCtx, endRouterSpan := startSpan(ctx, "router")
+	defer func() { endRouterSpan(err) }()
+
 	if d.Transport == "http" && s.http != nil {
 		// Explicit Unimplemented rather than silently falling through to
 		// PropertyStore below: once an HTTPAdapter is configured,
@@ -526,7 +565,10 @@ func (s *DeviceService) SetProperty(ctx context.Context, req *udalv1.SetProperty
 	}
 
 	if d.Transport == "mqtt" && s.mqtt != nil {
-		if err := s.mqtt.WriteProperty(ctx, req.GetDeviceId(), req.GetPropertyPath(), v); err != nil {
+		adapterCtx, endAdapterSpan := startSpan(routerCtx, "adapter")
+		err = s.mqtt.WriteProperty(adapterCtx, req.GetDeviceId(), req.GetPropertyPath(), v)
+		endAdapterSpan(err)
+		if err != nil {
 			metrics.AdapterErrors.WithLabelValues("mqtt_adapter").Inc()
 			return nil, mqttStatusError(err)
 		}
@@ -542,7 +584,10 @@ func (s *DeviceService) SetProperty(ctx context.Context, req *udalv1.SetProperty
 	}
 
 	if d.Transport == "can" && s.can != nil {
-		if err := s.can.WriteProperty(ctx, d, req.GetPropertyPath(), v); err != nil {
+		adapterCtx, endAdapterSpan := startSpan(routerCtx, "adapter")
+		err = s.can.WriteProperty(adapterCtx, d, req.GetPropertyPath(), v)
+		endAdapterSpan(err)
+		if err != nil {
 			metrics.AdapterErrors.WithLabelValues("can_adapter").Inc()
 			return nil, canStatusError(err)
 		}
