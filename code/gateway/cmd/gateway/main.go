@@ -19,6 +19,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	udalv1 "github.com/paulefl/udal/code/api/proto/gen/udal/v1"
+	_ "github.com/paulefl/udal/code/gateway/examples/adapters/echo" // registers the "echo" reference third-party adapter (issue #26)
+	"github.com/paulefl/udal/code/gateway/internal/adapter"
 	canadapter "github.com/paulefl/udal/code/gateway/internal/adapters/can"
 	httpadapter "github.com/paulefl/udal/code/gateway/internal/adapters/http"
 	mqttadapter "github.com/paulefl/udal/code/gateway/internal/adapters/mqtt"
@@ -298,6 +300,56 @@ func main() {
 				log.Warn("watch can device", "device", d.ID, "err", err)
 			}
 		}
+	}
+
+	// ─── Custom transport adapters (F-12, issue #26) ──────────────────────────
+	// Third-party adapter.Transport implementations register themselves via
+	// their own init() (internal/adapter.Register) once their package is
+	// blank-imported below — the reference example is examples/adapters/
+	// echo. Activating a registered transport for this gateway is purely
+	// config-driven (adapters.custom / UDAL_CUSTOM_ADAPTERS, comma-
+	// separated names, already resolved into cfg.Gateway.Adapters.Custom by
+	// cfg.ApplyEnv() above); adding a *new* third-party adapter needs no
+	// further change here beyond that one blank import (QR-09).
+	customNames := cfg.Gateway.Adapters.Custom
+	customTransports := make(map[string]adapter.Transport)
+	for _, name := range customNames {
+		// Reject a custom adapter claiming a built-in transport's name
+		// outright, rather than silently shadowing it: GetProperty/
+		// SetProperty always check mqtt/http/can first (see
+		// device_service.go), so a colliding custom transport would
+		// otherwise sit "activated" and health-checked, yet never actually
+		// be dispatched to for reads/writes — confusing to debug (code
+		// review finding, issue #26).
+		if name == "mqtt" || name == "http" || name == "can" {
+			log.Error("custom adapter name collides with a built-in transport", "name", name)
+			os.Exit(1)
+		}
+		t, ok := adapter.Lookup(name)
+		if !ok {
+			log.Error("custom adapter not registered — is its package blank-imported in main.go?", "name", name)
+			os.Exit(1)
+		}
+		customTransports[name] = t
+		if r, ok := t.(health.Reporter); ok {
+			healthChecker.Register(name, r)
+		}
+	}
+	if len(customTransports) > 0 {
+		svc.SetCustomTransports(customTransports)
+		for name, t := range customTransports {
+			devices, err := reg.List(registry.ListFilter{Transport: name})
+			if err != nil {
+				log.Error("list custom-transport devices", "transport", name, "err", err)
+				os.Exit(1)
+			}
+			for _, d := range devices {
+				if err := t.WatchDevice(context.Background(), d); err != nil {
+					log.Warn("watch custom-transport device", "device", d.ID, "transport", name, "err", err)
+				}
+			}
+		}
+		log.Info("custom adapters activated", "names", customNames)
 	}
 
 	// ─── Metrics/debug listener (issues #27, #28) ─────────────────────────────

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -75,6 +76,13 @@ type Adapters struct {
 	MQTT MQTTAdapter `yaml:"mqtt"`
 	HTTP HTTPAdapter `yaml:"http"`
 	CAN  CANAdapter  `yaml:"can"`
+	// Custom lists the names of third-party adapter.Transport
+	// implementations to activate (req42.adoc F-12, issue #26) — each name
+	// must already be registered (adapter.Register), typically via a blank
+	// import of the adapter's package in cmd/gateway/main.go. No effect on
+	// the mqtt/http/can adapters above, which aren't wired through the
+	// adapter.Transport/registry mechanism at all.
+	Custom []string `yaml:"custom"`
 }
 
 type MQTTAdapter struct {
@@ -164,6 +172,20 @@ func (c *Config) ApplyEnv() error {
 		*dst = Duration(d)
 		return nil
 	}
+	overrideStringSlice := func(dst *[]string, key string) {
+		v := os.Getenv(key)
+		if v == "" {
+			return
+		}
+		parts := strings.Split(v, ",")
+		names := make([]string, 0, len(parts))
+		for _, p := range parts {
+			if p = strings.TrimSpace(p); p != "" {
+				names = append(names, p)
+			}
+		}
+		*dst = names
+	}
 
 	if err := overrideInt(&c.Gateway.GRPCPort, "UDAL_GRPC_PORT"); err != nil {
 		return err
@@ -192,6 +214,7 @@ func (c *Config) ApplyEnv() error {
 	overrideString(&c.Gateway.Adapters.HTTP.MTLS.Key, "UDAL_HTTP_MTLS_KEY")
 	overrideString(&c.Gateway.Adapters.CAN.Interface, "UDAL_CAN_INTERFACE")
 	overrideString(&c.Gateway.Adapters.CAN.DBCPath, "UDAL_CAN_DBC_FILE")
+	overrideStringSlice(&c.Gateway.Adapters.Custom, "UDAL_CUSTOM_ADAPTERS")
 	if err := overrideDuration(&c.Gateway.HeartbeatInterval, "UDAL_HEARTBEAT_INTERVAL"); err != nil {
 		return err
 	}

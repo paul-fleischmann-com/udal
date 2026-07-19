@@ -11,6 +11,7 @@ import (
 	"time"
 
 	udalv1 "github.com/paulefl/udal/code/api/proto/gen/udal/v1"
+	"github.com/paulefl/udal/code/gateway/internal/adapter"
 	canadapter "github.com/paulefl/udal/code/gateway/internal/adapters/can"
 	httpadapter "github.com/paulefl/udal/code/gateway/internal/adapters/http"
 	mqttadapter "github.com/paulefl/udal/code/gateway/internal/adapters/mqtt"
@@ -108,6 +109,7 @@ type DeviceService struct {
 	mqtt       MQTTAdapter
 	http       HTTPAdapter
 	can        CANAdapter
+	custom     map[string]adapter.Transport
 	presence   PresenceMonitor
 	capability CapabilityRegistry
 }
@@ -139,6 +141,20 @@ func (s *DeviceService) SetHTTPAdapter(a HTTPAdapter) { s.http = a }
 // exactly as before (can-transport devices fall through to PropertyStore,
 // same as any other transport).
 func (s *DeviceService) SetCANAdapter(a CANAdapter) { s.can = a }
+
+// SetCustomTransports wires third-party adapter.Transport implementations
+// into the service (req42.adoc F-12, issue #26) — one entry per activated
+// name (see adapter.Register/Lookup and cmd/gateway/main.go's
+// adapters.custom wiring). A device whose Transport field matches a key in
+// transports routes GetProperty/SetProperty through it, exactly like the
+// three built-in adapters above; a device whose Transport matches no key
+// here (and isn't "mqtt"/"http"/"can") falls through to the in-memory
+// PropertyStore, unchanged from before this feature existed. Optional — a
+// DeviceService without any custom transports set behaves exactly as
+// before.
+func (s *DeviceService) SetCustomTransports(transports map[string]adapter.Transport) {
+	s.custom = transports
+}
 
 // SetPresenceMonitor wires a PresenceMonitor into the service so
 // RegisterDevice and StreamCommands report device liveness to it (issue
@@ -252,6 +268,31 @@ func canStatusError(err error) error {
 		return status.Errorf(codes.DeadlineExceeded, "can: %v", err)
 	default:
 		return status.Errorf(codes.Internal, "can: %v", err)
+	}
+}
+
+// customStatusError maps a third-party adapter.Transport error to a gRPC
+// status (issue #26). Unlike mqttStatusError/httpStatusError/
+// canStatusError, DeviceService has no knowledge of a third-party
+// Transport's own internal error types to switch on — only the sentinels
+// adapter.go itself defines (ErrWriteNotSupported, ErrNotFound,
+// ErrInvalidArgument) plus context.DeadlineExceeded are recognized;
+// anything else maps to Internal, same as the built-in adapters' own
+// default case. A Transport author who wants precise NotFound/
+// InvalidArgument status codes wraps one of those two sentinels; anything
+// unwrapped still works, just with the coarser Internal default.
+func customStatusError(name string, err error) error {
+	switch {
+	case errors.Is(err, adapter.ErrWriteNotSupported):
+		return status.Errorf(codes.Unimplemented, "%s: %v", name, err)
+	case errors.Is(err, adapter.ErrNotFound):
+		return status.Errorf(codes.NotFound, "%s: %v", name, err)
+	case errors.Is(err, adapter.ErrInvalidArgument):
+		return status.Errorf(codes.InvalidArgument, "%s: %v", name, err)
+	case errors.Is(err, context.DeadlineExceeded):
+		return status.Errorf(codes.DeadlineExceeded, "%s: %v", name, err)
+	default:
+		return status.Errorf(codes.Internal, "%s: %v", name, err)
 	}
 }
 
@@ -374,7 +415,15 @@ func (s *DeviceService) RegisterDevice(ctx context.Context, req *udalv1.Register
 		}
 		return nil, status.Errorf(codes.Internal, "registry register: %v", err)
 	}
-	if d.Transport == "mqtt" && s.mqtt != nil {
+	// A switch, not four independent ifs, so a custom transport registered
+	// under a name that collides with a built-in one ("mqtt"/"http"/"can")
+	// can't ever double-WatchDevice a device on both the built-in adapter
+	// and the colliding custom one — exactly mirroring how GetProperty/
+	// SetProperty's own switch/if-chain already only reaches their isCustom
+	// branch when none of the built-in cases matched (code review finding,
+	// issue #26).
+	switch {
+	case d.Transport == "mqtt" && s.mqtt != nil:
 		// Best-effort: for most failures, ReadProperty/WriteProperty
 		// subscribe lazily on first access regardless, so a failure here
 		// just delays fan-out for properties nobody's requested yet. The
@@ -385,15 +434,13 @@ func (s *DeviceService) RegisterDevice(ctx context.Context, req *udalv1.Register
 		// such an ID would turn a per-device subscription into a
 		// broker-wide wildcard).
 		_ = s.mqtt.WatchDevice(ctx, d.ID)
-	}
-	if d.Transport == "http" && s.http != nil {
+	case d.Transport == "http" && s.http != nil:
 		// Best-effort, same reasoning as the mqtt branch above: a failure
 		// here (e.g. missing http.endpoint label) only means this device's
 		// poll loop/webhook registration didn't start — ReadProperty still
 		// surfaces that same error clearly on the next GetProperty call.
 		_ = s.http.WatchDevice(ctx, d)
-	}
-	if d.Transport == "can" && s.can != nil {
+	case d.Transport == "can" && s.can != nil:
 		// Best-effort, same reasoning as the http branch above: a failure
 		// here (e.g. missing can.message label, or the label naming a
 		// message not in the loaded DBC file) only means this device isn't
@@ -401,6 +448,11 @@ func (s *DeviceService) RegisterDevice(ctx context.Context, req *udalv1.Register
 		// WriteProperty still surface that same error clearly on the next
 		// call.
 		_ = s.can.WatchDevice(ctx, d)
+	default:
+		if t, ok := s.custom[d.Transport]; ok {
+			// Best-effort, same reasoning as the http/can branches above.
+			_ = t.WatchDevice(ctx, d)
+		}
 	}
 	if s.presence != nil {
 		// Marks the device online immediately on (re-)registration —
@@ -467,6 +519,7 @@ func (s *DeviceService) GetProperty(ctx context.Context, req *udalv1.GetProperty
 	}
 
 	var v api.PropertyValue
+	custom, isCustom := s.custom[d.Transport]
 	routerCtx, endRouterSpan := startSpan(ctx, "router")
 	defer func() { endRouterSpan(err) }()
 
@@ -494,6 +547,14 @@ func (s *DeviceService) GetProperty(ctx context.Context, req *udalv1.GetProperty
 		if err != nil {
 			metrics.AdapterErrors.WithLabelValues("can_adapter").Inc()
 			return nil, canStatusError(err)
+		}
+	case isCustom:
+		adapterCtx, endAdapterSpan := startSpan(routerCtx, "adapter")
+		v, err = custom.ReadProperty(adapterCtx, d, req.GetPropertyPath())
+		endAdapterSpan(err)
+		if err != nil {
+			metrics.AdapterErrors.WithLabelValues(custom.Name()).Inc()
+			return nil, customStatusError(custom.Name(), err)
 		}
 	default:
 		v, err = s.props.Get(req.GetDeviceId(), req.GetPropertyPath())
@@ -548,6 +609,7 @@ func (s *DeviceService) SetProperty(ctx context.Context, req *udalv1.SetProperty
 		}
 	}
 
+	custom, isCustom := s.custom[d.Transport]
 	routerCtx, endRouterSpan := startSpan(ctx, "router")
 	defer func() { endRouterSpan(err) }()
 
@@ -600,18 +662,48 @@ func (s *DeviceService) SetProperty(ctx context.Context, req *udalv1.SetProperty
 		return &udalv1.SetPropertyResponse{NewValue: pbVal}, nil
 	}
 
+	if isCustom {
+		adapterCtx, endAdapterSpan := startSpan(routerCtx, "adapter")
+		err = custom.WriteProperty(adapterCtx, d, req.GetPropertyPath(), v)
+		endAdapterSpan(err)
+		if err != nil {
+			metrics.AdapterErrors.WithLabelValues(custom.Name()).Inc()
+			return nil, customStatusError(custom.Name(), err)
+		}
+		// Unlike the built-in mqtt/can branches above, a third-party
+		// Transport has no OnPropertyUpdate-style callback wired up in
+		// main.go to drive Subscribe fan-out on its own (adapter.Transport
+		// has no such hook, issue #26) — so this call publishes directly,
+		// same as the PropertyStore fallback below.
+		return s.publishAndRespond(req.GetDeviceId(), req.GetPropertyPath(), v)
+	}
+
 	if err := s.props.Set(req.GetDeviceId(), req.GetPropertyPath(), v); err != nil {
 		return nil, status.Errorf(codes.Internal, "set property: %v", err)
 	}
+	return s.publishAndRespond(req.GetDeviceId(), req.GetPropertyPath(), v)
+}
+
+// publishAndRespond marks deviceID online, publishes a PropertyUpdate for
+// broker.Publish subscribers to fan out, and builds the SetProperty
+// response — the common tail shared by SetProperty's isCustom branch and
+// its PropertyStore fallback (the only two paths that write to a place
+// with no OnPropertyUpdate-style callback of its own to drive Subscribe
+// fan-out; the mqtt/can branches above return earlier, before this point,
+// for that reason — see their own comments).
+func (s *DeviceService) publishAndRespond(deviceID, path string, v api.PropertyValue) (*udalv1.SetPropertyResponse, error) {
 	now := time.Now()
-	_ = s.reg.UpdateStatus(req.GetDeviceId(), api.DeviceStatusOnline, now)
+	_ = s.reg.UpdateStatus(deviceID, api.DeviceStatusOnline, now)
 	s.broker.Publish(api.PropertyUpdate{
-		DeviceID:     req.GetDeviceId(),
-		PropertyPath: req.GetPropertyPath(),
+		DeviceID:     deviceID,
+		PropertyPath: path,
 		Value:        v,
 		Timestamp:    now,
 	})
-	pbVal, _ := toProtoValue(v)
+	pbVal, err := toProtoValue(v)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "encode property value: %v", err)
+	}
 	return &udalv1.SetPropertyResponse{NewValue: pbVal}, nil
 }
 
