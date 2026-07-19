@@ -425,11 +425,41 @@ a|
 | Third-party adapters implement the public `Transport` interface and are wired into
   the gateway via configuration. No changes to gateway core packages required.
 
+| Registration Convention
+a|
+`Transport` (`code/gateway/internal/adapter/transport.go`) unifies
+`ReadProperty`/`WriteProperty`/`WatchDevice` — the same three operations
+`DeviceService`'s built-in MQTTAdapter/HTTPAdapter/CANAdapter interfaces
+already expose individually (issues #11/#24/#25) — behind one interface, so
+a single routing code path in `GetProperty`/`SetProperty` dispatches to any
+of them, third-party or built-in, without a type switch per adapter. A
+third-party adapter package registers itself via `adapter.Register(name,
+transport)` in its own `init()`; `gateway.yaml`'s `adapters.custom` list
+(or `UDAL_CUSTOM_ADAPTERS`, comma-separated) names which registered
+transports to activate for a given gateway process — a device whose
+`transport` field matches an activated name routes through it. This is
+the AC's "compiled-in registration" path; a Go-native `plugin.Open(".so")`
+loader was considered and deliberately not built (Linux-only, requires an
+exact toolchain/build-flag match between host and plugin, and would
+undermine QR-07's single-binary portability goal), see the plan doc.
+`code/gateway/examples/adapters/echo` is the reference example — a trivial
+in-memory adapter proving the interface, the registry, and
+`internal/adapter/adaptertest`'s common conformance test suite all work
+end-to-end. It lives under `code/gateway/` rather than a genuinely separate
+module/repository because `Transport` is (per this AC) an internal
+package, which Go's own import-visibility rule restricts to code rooted
+under `code/gateway/` regardless of module boundaries — matching QR-09's
+own stimulus text ("Contributor adds J1939 adapter"), which describes a
+contributor to this repository, not an external, separately-versioned
+package.
+
 | Acceptance Criteria
 a|
-- [ ] `Transport` interface is public and documented in `code/gateway/internal/adapter/transport.go`
-- [ ] Example third-party adapter compiles and passes the common adapter test suite
-- [ ] Gateway loads adapter via config `type: custom` + binary plugin or compiled-in registration
+- [x] `Transport` interface is public and documented in `code/gateway/internal/adapter/transport.go`
+- [x] Example third-party adapter compiles and passes the common adapter test suite
+- [x] Gateway loads adapter via config `type: custom` + binary plugin or compiled-in registration —
+      compiled-in registration only, see Registration Convention above for
+      why the plugin alternative was scoped out
 |===
 
 === 4.4 Capability Schema

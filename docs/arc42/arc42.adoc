@@ -254,6 +254,10 @@ See `architecture.jsonc` view `context` for the diagram.
 | Go, golang.org/x/sys/unix (SocketCAN), hand-rolled DBC parser
 | Transport implementation for SocketCAN; decodes CAN frames via DBC signal map (issue #25)
 
+| Custom Adapters
+| Go, `internal/adapter` registry
+| Third-party `Transport` implementations, compiled in and activated via config (issue #26)
+
 | Device Registry
 | Go, bbolt
 | Persists device entries; answers GetDevice / ListDevices queries
@@ -539,6 +543,8 @@ gateway:
     can:
       interface: can0
       dbc_file: /etc/udal/can/vehicle.dbc
+    custom:
+      - echo
   heartbeat_interval: 30s
   device_timeout: 90s
 ----
@@ -550,6 +556,39 @@ gateway:
 * API keys stored as bcrypt hashes; never returned in API responses
 * mTLS: gateway validates client certificate chain against configured CA
 * Input validation on all gRPC message fields; invalid values → `INVALID_ARGUMENT`
+
+=== 8.6 Adapter Extensibility
+
+* **`Transport` interface** (F-12, issue #26, `code/gateway/internal/
+  adapter/transport.go`): `ReadProperty`/`WriteProperty`/`WatchDevice`,
+  unifying the same three operations the built-in MQTT/HTTP/CAN adapters
+  already exposed individually (issues #11/#24/#25) via their own narrower
+  interfaces in `internal/service` — `DeviceService.GetProperty`/
+  `SetProperty` dispatch to any registered `Transport` through one code
+  path, alongside (not replacing) the three built-ins. Read-only
+  transports return `adapter.ErrWriteNotSupported` from `WriteProperty`
+  rather than omitting the method.
+* **Compiled-in registration, not a `.so` plugin**: a third-party adapter
+  package calls `adapter.Register(name, transport)` in its own `init()`;
+  blank-importing that package (one line in `cmd/gateway/main.go`) makes it
+  available. `gateway.yaml`'s `adapters.custom` list (or
+  `UDAL_CUSTOM_ADAPTERS`, comma-separated) activates it by name for a given
+  process — a device whose `transport` field matches an activated name
+  routes through it, watched at `RegisterDevice` time and at startup for
+  already-registered devices, same as the built-in adapters. A Go-native
+  `plugin.Open(".so")` loader was considered and rejected: Linux-only,
+  requires an exact host/plugin toolchain match, and works against QR-07's
+  single-binary portability goal.
+* **`internal/adapter/adaptertest`**: a shared conformance test suite
+  (`Name()` non-empty, `WatchDevice` doesn't error, `WriteProperty` then
+  `ReadProperty` round-trips or returns `ErrWriteNotSupported`) any
+  `Transport` implementation can run against itself.
+* **`code/gateway/examples/adapters/echo`** is the reference third-party
+  adapter (an in-memory echo, no real device on the other end) — it lives
+  under `code/gateway/` rather than a genuinely separate module/repository
+  because `Transport` is an internal package, and Go's import-visibility
+  rule restricts internal-package imports to code rooted under the same
+  parent directory tree regardless of module boundaries.
 
 // ─────────────────────────────────────────────────────────────────────────────
 == 9. Architecture Decisions

@@ -9,6 +9,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Pluggable transport adapter interface (F-12/QR-09, `code/gateway/internal/adapter`):
+  a new public `Transport` interface (`ReadProperty`/`WriteProperty`/`WatchDevice`)
+  unifies the three built-in MQTT/HTTP/CAN adapters' operations behind one
+  contract, so `DeviceService.GetProperty`/`SetProperty` can dispatch to a
+  third-party adapter through the same code path used for the built-ins.
+  Third-party adapters register themselves via `adapter.Register(name, transport)`
+  in their own `init()`; `gateway.yaml`'s new `adapters.custom` list (or
+  `UDAL_CUSTOM_ADAPTERS`, comma-separated) activates a registered transport by
+  name for a given gateway process — a device whose `transport` matches an
+  activated name routes through it, watched at `RegisterDevice` time and at
+  startup for already-registered devices, exactly like the built-ins. Read-only
+  transports return the new `adapter.ErrWriteNotSupported` from `WriteProperty`
+  (mapped to `Unimplemented`) instead of omitting the method. A Go-native
+  `plugin.Open(".so")` loader was considered and not built — Linux-only,
+  requires an exact host/plugin toolchain match, and works against the
+  single-binary portability goal. `internal/adapter/adaptertest` is a shared
+  conformance test suite any `Transport` implementation can run against itself;
+  `code/gateway/examples/adapters/echo` is the reference third-party adapter
+  (an in-memory echo, blank-imported and registered by default) proving the
+  interface, registry, and conformance suite all work end-to-end — verified
+  manually against a running gateway with `UDAL_CUSTOM_ADAPTERS=echo`: a
+  `RegisterDevice`/`SetProperty`/`GetProperty` round-trip via REST returned the
+  just-written value. (#26)
 - OpenTelemetry distributed tracing (F-24, `code/gateway/internal/tracing`):
   `tracing.NewProvider` builds and globally registers a real
   `*sdktrace.TracerProvider` on startup — always, regardless of whether

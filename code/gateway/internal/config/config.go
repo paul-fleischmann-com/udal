@@ -75,6 +75,13 @@ type Adapters struct {
 	MQTT MQTTAdapter `yaml:"mqtt"`
 	HTTP HTTPAdapter `yaml:"http"`
 	CAN  CANAdapter  `yaml:"can"`
+	// Custom lists the names of third-party adapter.Transport
+	// implementations to activate (req42.adoc F-12, issue #26) — each name
+	// must already be registered (adapter.Register), typically via a blank
+	// import of the adapter's package in cmd/gateway/main.go. No effect on
+	// the mqtt/http/can adapters above, which aren't wired through the
+	// adapter.Transport/registry mechanism at all.
+	Custom []string `yaml:"custom"`
 }
 
 type MQTTAdapter struct {
