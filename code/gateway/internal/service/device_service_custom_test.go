@@ -167,3 +167,64 @@ func TestGetProperty_UnknownTransportIgnoresCustomAdaptersFallsBackToPropertySto
 		t.Errorf("readCalls = %v, want none — device's transport is \"mqtt\", not \"echo\"", fake.readCalls)
 	}
 }
+
+// TestRegisterDevice_CustomTransportCollidingWithBuiltinNameDoesNotDoubleWatch
+// guards against a bug a code review caught before this shipped: a custom
+// transport registered under a name that collides with a built-in one
+// ("mqtt"/"http"/"can") used to fire WatchDevice on *both* the built-in
+// adapter and the colliding custom one, double-subscribing the device.
+// cmd/gateway/main.go now refuses to activate a custom adapter under a
+// reserved name at startup — this test guards the same invariant directly
+// at the DeviceService level, in case s.custom is ever populated with a
+// colliding key some other way.
+func TestRegisterDevice_CustomTransportCollidingWithBuiltinNameDoesNotDoubleWatch(t *testing.T) {
+	mqttFake := &fakeMQTTAdapter{}
+	customFake := &fakeTransport{name: "mqtt"}
+	svc := service.New(registry.NewMemoryRegistry(), api.NewMemoryPropertyStore(), api.NewBroker(), api.NewCommandRouter())
+	svc.SetMQTTAdapter(mqttFake)
+	svc.SetCustomTransports(map[string]adapter.Transport{"mqtt": customFake})
+
+	if _, err := svc.RegisterDevice(adminCtx(), &udalv1.RegisterDeviceRequest{
+		Name: "sensor", Capability: "temperature-sensor", Transport: "mqtt",
+	}); err != nil {
+		t.Fatalf("RegisterDevice: %v", err)
+	}
+
+	if len(mqttFake.watchedDevices) != 1 {
+		t.Errorf("built-in mqtt adapter watchedDevices = %v, want exactly 1", mqttFake.watchedDevices)
+	}
+	if len(customFake.watchedDevices) != 0 {
+		t.Errorf("colliding custom transport watchedDevices = %v, want none — the built-in mqtt adapter must win, not both", customFake.watchedDevices)
+	}
+}
+
+func TestGetProperty_CustomTransportErrNotFound_MapsNotFound(t *testing.T) {
+	fake := &fakeTransport{name: "echo", readErr: adapter.ErrNotFound}
+	svc := newSvcWithCustom("echo", fake)
+	reg, _ := svc.RegisterDevice(adminCtx(), &udalv1.RegisterDeviceRequest{
+		Name: "sensor", Capability: "temperature-sensor", Transport: "echo",
+	})
+
+	_, err := svc.GetProperty(adminCtx(), &udalv1.GetPropertyRequest{
+		DeviceId: reg.Device.Id, PropertyPath: "temperature",
+	})
+	if grpcCode(err) != codes.NotFound {
+		t.Errorf("expected NotFound for adapter.ErrNotFound, got %v", err)
+	}
+}
+
+func TestSetProperty_CustomTransportErrInvalidArgument_MapsInvalidArgument(t *testing.T) {
+	fake := &fakeTransport{name: "echo", writeErr: adapter.ErrInvalidArgument}
+	svc := newSvcWithCustom("echo", fake)
+	reg, _ := svc.RegisterDevice(adminCtx(), &udalv1.RegisterDeviceRequest{
+		Name: "sensor", Capability: "temperature-sensor", Transport: "echo",
+	})
+
+	_, err := svc.SetProperty(adminCtx(), &udalv1.SetPropertyRequest{
+		DeviceId: reg.Device.Id, PropertyPath: "temperature",
+		Value: &udalv1.PropertyValue{Value: &udalv1.PropertyValue_FloatVal{FloatVal: 1}},
+	})
+	if grpcCode(err) != codes.InvalidArgument {
+		t.Errorf("expected InvalidArgument for adapter.ErrInvalidArgument, got %v", err)
+	}
+}

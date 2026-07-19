@@ -91,6 +91,69 @@ untereinander vereinheitlicht — mit unterschiedlichen Methodensignaturen
   entweder den geschriebenen Wert zurückgibt oder `WriteProperty`
   `ErrWriteNotSupported` liefert (für reine Lese-Transports).
 
+## Nachgezogen aus dem Review (vor PR-Eröffnung)
+
+Ein High-Effort-Multi-Agent-Review (8 Finder-Winkel + Verifikation) lief
+gegen den vollständigen Diff. Vier Findings wurden behoben, der Rest
+(vier weitere parallele Dispatch-Wege statt einer echten Vereinheitlichung
+von mqtt/http/can auf `Transport`, unbedingter Blank-Import des
+`echo`-Beispiels in jedes Produktions-Binary, `Register`s Panic-bei-
+Duplikat als harter, unabgefangener Prozessabsturz vor `main()`) bewusst
+als dokumentierte, bereits im Design-Abschnitt oben begründete Trade-offs
+belassen:
+
+- **`ApplyEnv()` überging `UDAL_CUSTOM_ADAPTERS`** (ein Review-Winkel
+  fand das): jedes andere `adapters.*`-Feld hat eine passende
+  `overrideString`/`overrideInt`/`overrideDuration`-Zeile in `ApplyEnv()`,
+  passend zu dessen eigenem Doc-Kommentar-Versprechen ("overrides every
+  Config field from its documented UDAL_* environment variable"); `Custom
+  []string` wurde stattdessen nur ad hoc in `main.go` per
+  `strings.Join`+`strings.Split`-Umweg um das string-only
+  `config.ResolveString` herum aufgelöst — ein Bruch dieses Versprechens,
+  von `TestApplyEnv_OverridesEverySettableField` nicht erkannt, da der
+  Test eine feste Env-Var-Liste prüft, nicht Reflection-basiert über alle
+  Felder geht. Fix: ein neuer `overrideStringSlice`-Helper in `ApplyEnv()`
+  (Komma-getrennt, whitespace-getrimmt, leere Segmente verworfen);
+  `main.go` liest jetzt einfach `cfg.Gateway.Adapters.Custom` direkt —
+  behebt gleichzeitig einen zweiten, unabhängig gefundenen
+  Simplification-Finding (den überflüssigen Join-dann-Split-Umweg).
+- **Custom-Transport unter einem reservierten Namen ("mqtt"/"http"/"can")
+  konnte ein Gerät doppelt `WatchDevice`n** (zwei Review-Winkel fanden das
+  unabhängig): `RegisterDevice`s vier `if`-Blöcke für
+  mqtt/http/can/custom waren unabhängig voneinander, nicht
+  gegenseitig exklusiv wie `GetProperty`/`SetProperty`s eigene
+  Switch/If-Kette es für denselben Fall bereits war (dort gewinnt der
+  eingebaute Adapter einfach durch Case-Reihenfolge, `custom` wird nie
+  erreicht) — ein Gerät mit `transport: "mqtt"` hätte bei einer
+  Namenskollision sowohl den eingebauten MQTT-Adapter als auch den
+  kollidierenden Custom-Transport beim Registrieren beobachtet. Fix:
+  `RegisterDevice`s vier `if`s zu einem `switch` mit `default`-Fall
+  umgebaut, exakt spiegelbildlich zu `GetProperty`/`SetProperty`s
+  Struktur; zusätzlich lehnt `main.go` einen Custom-Adapter mit
+  reserviertem Namen jetzt beim Start klar ab (`os.Exit(1)`, statt
+  still zu shadowen) — verifiziert per manuellem Smoke-Test
+  (`UDAL_CUSTOM_ADAPTERS=mqtt` → Prozess beendet sich mit Exit-Code 1 und
+  klarer Fehlermeldung).
+- **`adapter.Register(name, nil)` hätte erst später, mitten in einem
+  Request, mit einem Nil-Interface-Panic gecrasht** statt sofort bei der
+  Registrierung selbst: `Register` prüft jetzt explizit auf `t == nil` und
+  panict dort mit einer klaren, den Transport-Namen nennenden Meldung —
+  fail-fast am eigentlichen Fehlerort (dem fehlerhaften `init()` eines
+  Adapter-Pakets), nicht erst beim ersten `ReadProperty`/`WriteProperty`-
+  Aufruf für ein zufällig passendes Gerät.
+- **`customStatusError` bildete jeden nicht erkannten Fehler eines
+  Drittanbieter-Transports pauschal auf `codes.Internal` ab**, im
+  Gegensatz zu den eingebauten Adaptern, die je eigene, präzise
+  Status-Zuordnungen haben (ein Review-Winkel fand das): ein
+  Drittanbieter-Adapter hatte keine Möglichkeit, für eine harmlose
+  "Property nicht gefunden"-Situation `codes.NotFound` statt eines
+  alarmierenden `codes.Internal` auszulösen. Fix: zwei neue,
+  `errors.Is`-kompatible Sentinel-Fehler `adapter.ErrNotFound`/
+  `adapter.ErrInvalidArgument`, die ein Transport optional zurückgeben
+  kann, um dieselbe präzise Status-Zuordnung zu bekommen wie die
+  eingebauten Adapter — ohne Sentinel funktioniert ein Transport weiterhin
+  unverändert, nur mit dem gröberen `Internal`-Default.
+
 ## Testabdeckung
 
 - **`internal/adapter`**: `registry_test.go` (Register/Lookup, unbekannter

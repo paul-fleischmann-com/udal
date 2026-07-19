@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -171,6 +172,20 @@ func (c *Config) ApplyEnv() error {
 		*dst = Duration(d)
 		return nil
 	}
+	overrideStringSlice := func(dst *[]string, key string) {
+		v := os.Getenv(key)
+		if v == "" {
+			return
+		}
+		parts := strings.Split(v, ",")
+		names := make([]string, 0, len(parts))
+		for _, p := range parts {
+			if p = strings.TrimSpace(p); p != "" {
+				names = append(names, p)
+			}
+		}
+		*dst = names
+	}
 
 	if err := overrideInt(&c.Gateway.GRPCPort, "UDAL_GRPC_PORT"); err != nil {
 		return err
@@ -199,6 +214,7 @@ func (c *Config) ApplyEnv() error {
 	overrideString(&c.Gateway.Adapters.HTTP.MTLS.Key, "UDAL_HTTP_MTLS_KEY")
 	overrideString(&c.Gateway.Adapters.CAN.Interface, "UDAL_CAN_INTERFACE")
 	overrideString(&c.Gateway.Adapters.CAN.DBCPath, "UDAL_CAN_DBC_FILE")
+	overrideStringSlice(&c.Gateway.Adapters.Custom, "UDAL_CUSTOM_ADAPTERS")
 	if err := overrideDuration(&c.Gateway.HeartbeatInterval, "UDAL_HEARTBEAT_INTERVAL"); err != nil {
 		return err
 	}

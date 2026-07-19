@@ -274,15 +274,21 @@ func canStatusError(err error) error {
 // customStatusError maps a third-party adapter.Transport error to a gRPC
 // status (issue #26). Unlike mqttStatusError/httpStatusError/
 // canStatusError, DeviceService has no knowledge of a third-party
-// Transport's internal error types to switch on — the two cases it can
-// recognize generically are adapter.ErrWriteNotSupported (from the
-// interface itself, see SetProperty) and context.DeadlineExceeded (from
-// the ctx SetProperty/GetProperty already passed in); anything else maps
-// to Internal, same as the built-in adapters' own default case.
+// Transport's own internal error types to switch on — only the sentinels
+// adapter.go itself defines (ErrWriteNotSupported, ErrNotFound,
+// ErrInvalidArgument) plus context.DeadlineExceeded are recognized;
+// anything else maps to Internal, same as the built-in adapters' own
+// default case. A Transport author who wants precise NotFound/
+// InvalidArgument status codes wraps one of those two sentinels; anything
+// unwrapped still works, just with the coarser Internal default.
 func customStatusError(name string, err error) error {
 	switch {
 	case errors.Is(err, adapter.ErrWriteNotSupported):
 		return status.Errorf(codes.Unimplemented, "%s: %v", name, err)
+	case errors.Is(err, adapter.ErrNotFound):
+		return status.Errorf(codes.NotFound, "%s: %v", name, err)
+	case errors.Is(err, adapter.ErrInvalidArgument):
+		return status.Errorf(codes.InvalidArgument, "%s: %v", name, err)
 	case errors.Is(err, context.DeadlineExceeded):
 		return status.Errorf(codes.DeadlineExceeded, "%s: %v", name, err)
 	default:
@@ -409,7 +415,15 @@ func (s *DeviceService) RegisterDevice(ctx context.Context, req *udalv1.Register
 		}
 		return nil, status.Errorf(codes.Internal, "registry register: %v", err)
 	}
-	if d.Transport == "mqtt" && s.mqtt != nil {
+	// A switch, not four independent ifs, so a custom transport registered
+	// under a name that collides with a built-in one ("mqtt"/"http"/"can")
+	// can't ever double-WatchDevice a device on both the built-in adapter
+	// and the colliding custom one — exactly mirroring how GetProperty/
+	// SetProperty's own switch/if-chain already only reaches their isCustom
+	// branch when none of the built-in cases matched (code review finding,
+	// issue #26).
+	switch {
+	case d.Transport == "mqtt" && s.mqtt != nil:
 		// Best-effort: for most failures, ReadProperty/WriteProperty
 		// subscribe lazily on first access regardless, so a failure here
 		// just delays fan-out for properties nobody's requested yet. The
@@ -420,15 +434,13 @@ func (s *DeviceService) RegisterDevice(ctx context.Context, req *udalv1.Register
 		// such an ID would turn a per-device subscription into a
 		// broker-wide wildcard).
 		_ = s.mqtt.WatchDevice(ctx, d.ID)
-	}
-	if d.Transport == "http" && s.http != nil {
+	case d.Transport == "http" && s.http != nil:
 		// Best-effort, same reasoning as the mqtt branch above: a failure
 		// here (e.g. missing http.endpoint label) only means this device's
 		// poll loop/webhook registration didn't start — ReadProperty still
 		// surfaces that same error clearly on the next GetProperty call.
 		_ = s.http.WatchDevice(ctx, d)
-	}
-	if d.Transport == "can" && s.can != nil {
+	case d.Transport == "can" && s.can != nil:
 		// Best-effort, same reasoning as the http branch above: a failure
 		// here (e.g. missing can.message label, or the label naming a
 		// message not in the loaded DBC file) only means this device isn't
@@ -436,10 +448,11 @@ func (s *DeviceService) RegisterDevice(ctx context.Context, req *udalv1.Register
 		// WriteProperty still surface that same error clearly on the next
 		// call.
 		_ = s.can.WatchDevice(ctx, d)
-	}
-	if t, ok := s.custom[d.Transport]; ok {
-		// Best-effort, same reasoning as the http/can branches above.
-		_ = t.WatchDevice(ctx, d)
+	default:
+		if t, ok := s.custom[d.Transport]; ok {
+			// Best-effort, same reasoning as the http/can branches above.
+			_ = t.WatchDevice(ctx, d)
+		}
 	}
 	if s.presence != nil {
 		// Marks the device online immediately on (re-)registration —
@@ -662,30 +675,35 @@ func (s *DeviceService) SetProperty(ctx context.Context, req *udalv1.SetProperty
 		// main.go to drive Subscribe fan-out on its own (adapter.Transport
 		// has no such hook, issue #26) — so this call publishes directly,
 		// same as the PropertyStore fallback below.
-		now := time.Now()
-		_ = s.reg.UpdateStatus(req.GetDeviceId(), api.DeviceStatusOnline, now)
-		s.broker.Publish(api.PropertyUpdate{
-			DeviceID:     req.GetDeviceId(),
-			PropertyPath: req.GetPropertyPath(),
-			Value:        v,
-			Timestamp:    now,
-		})
-		pbVal, _ := toProtoValue(v)
-		return &udalv1.SetPropertyResponse{NewValue: pbVal}, nil
+		return s.publishAndRespond(req.GetDeviceId(), req.GetPropertyPath(), v)
 	}
 
 	if err := s.props.Set(req.GetDeviceId(), req.GetPropertyPath(), v); err != nil {
 		return nil, status.Errorf(codes.Internal, "set property: %v", err)
 	}
+	return s.publishAndRespond(req.GetDeviceId(), req.GetPropertyPath(), v)
+}
+
+// publishAndRespond marks deviceID online, publishes a PropertyUpdate for
+// broker.Publish subscribers to fan out, and builds the SetProperty
+// response — the common tail shared by SetProperty's isCustom branch and
+// its PropertyStore fallback (the only two paths that write to a place
+// with no OnPropertyUpdate-style callback of its own to drive Subscribe
+// fan-out; the mqtt/can branches above return earlier, before this point,
+// for that reason — see their own comments).
+func (s *DeviceService) publishAndRespond(deviceID, path string, v api.PropertyValue) (*udalv1.SetPropertyResponse, error) {
 	now := time.Now()
-	_ = s.reg.UpdateStatus(req.GetDeviceId(), api.DeviceStatusOnline, now)
+	_ = s.reg.UpdateStatus(deviceID, api.DeviceStatusOnline, now)
 	s.broker.Publish(api.PropertyUpdate{
-		DeviceID:     req.GetDeviceId(),
-		PropertyPath: req.GetPropertyPath(),
+		DeviceID:     deviceID,
+		PropertyPath: path,
 		Value:        v,
 		Timestamp:    now,
 	})
-	pbVal, _ := toProtoValue(v)
+	pbVal, err := toProtoValue(v)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "encode property value: %v", err)
+	}
 	return &udalv1.SetPropertyResponse{NewValue: pbVal}, nil
 }
 

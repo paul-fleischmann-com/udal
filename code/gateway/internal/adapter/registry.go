@@ -31,13 +31,19 @@ var (
 // adapters.custom list (or UDAL_CUSTOM_ADAPTERS) to activate. Intended to
 // be called from an adapter package's own init(), so blank-importing the
 // package (`_ "import/path"`) is enough to make it available — see
-// code/adapters/community/echo/echo.go. Panics on a duplicate name, same
-// as database/sql's driver registry: two adapters silently claiming the
-// same transport name is a build-time programming error, not a runtime
-// condition to recover from.
+// code/gateway/examples/adapters/echo/echo.go. Panics on a duplicate name
+// or a nil t, same as database/sql's driver registry: both are build-time
+// programming errors in the registering package's own init(), not runtime
+// conditions to recover from — better to panic here, at process startup,
+// with a clear message naming the transport, than to let a nil Transport
+// sit silently in the registry and panic on nil-interface method dispatch
+// later, mid-request, once some device's Transport field happens to match.
 func Register(name string, t Transport) {
 	registryMu.Lock()
 	defer registryMu.Unlock()
+	if t == nil {
+		panic(fmt.Sprintf("adapter: Register called with a nil Transport for %q", name))
+	}
 	if _, exists := registry[name]; exists {
 		panic(fmt.Sprintf("adapter: Register called twice for transport %q", name))
 	}

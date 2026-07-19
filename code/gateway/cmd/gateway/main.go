@@ -308,14 +308,22 @@ func main() {
 	// blank-imported below — the reference example is examples/adapters/
 	// echo. Activating a registered transport for this gateway is purely
 	// config-driven (adapters.custom / UDAL_CUSTOM_ADAPTERS, comma-
-	// separated names); adding a *new* third-party adapter needs no further
-	// change here beyond that one blank import (QR-09).
-	customNames := strings.Split(config.ResolveString(os.Getenv("UDAL_CUSTOM_ADAPTERS"), strings.Join(cfg.Gateway.Adapters.Custom, ","), ""), ",")
+	// separated names, already resolved into cfg.Gateway.Adapters.Custom by
+	// cfg.ApplyEnv() above); adding a *new* third-party adapter needs no
+	// further change here beyond that one blank import (QR-09).
+	customNames := cfg.Gateway.Adapters.Custom
 	customTransports := make(map[string]adapter.Transport)
 	for _, name := range customNames {
-		name = strings.TrimSpace(name)
-		if name == "" {
-			continue
+		// Reject a custom adapter claiming a built-in transport's name
+		// outright, rather than silently shadowing it: GetProperty/
+		// SetProperty always check mqtt/http/can first (see
+		// device_service.go), so a colliding custom transport would
+		// otherwise sit "activated" and health-checked, yet never actually
+		// be dispatched to for reads/writes — confusing to debug (code
+		// review finding, issue #26).
+		if name == "mqtt" || name == "http" || name == "can" {
+			log.Error("custom adapter name collides with a built-in transport", "name", name)
+			os.Exit(1)
 		}
 		t, ok := adapter.Lookup(name)
 		if !ok {

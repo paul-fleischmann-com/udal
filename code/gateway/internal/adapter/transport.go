@@ -57,3 +57,20 @@ type Transport interface {
 // has no WriteProperty method at all, having been built before this
 // interface existed).
 var ErrWriteNotSupported = errors.New("adapter: WriteProperty not supported by this transport")
+
+// ErrNotFound and ErrInvalidArgument are sentinel errors a Transport's
+// ReadProperty/WriteProperty may wrap (errors.Is-compatible, e.g. via
+// fmt.Errorf("...: %w", adapter.ErrNotFound)) to get the same precise gRPC
+// status mapping (codes.NotFound/codes.InvalidArgument) the built-in
+// mqtt/http/can adapters already have via their own adapter-specific
+// sentinels (mqttadapter.ErrInvalidTopicSegment, canadapter.ErrUnknownMessage,
+// httpadapter.StatusError, ...) — DeviceService has no way to know a
+// third-party Transport's own error types, so without these two, every
+// unrecognized error would map to codes.Internal regardless of whether it
+// actually represents a routine "no such property" or "bad request"
+// condition (code review finding, issue #26). Optional: a Transport that
+// doesn't use these still works, just with the coarser Internal default.
+var (
+	ErrNotFound        = errors.New("adapter: property not found")
+	ErrInvalidArgument = errors.New("adapter: invalid argument")
+)

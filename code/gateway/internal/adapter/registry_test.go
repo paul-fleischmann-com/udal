@@ -49,3 +49,17 @@ func TestRegister_DuplicateNamePanics(t *testing.T) {
 	}()
 	adapter.Register("registry-test-duplicate", &fakeTransport{name: "registry-test-duplicate"})
 }
+
+// TestRegister_NilTransportPanics guards against a nil Transport sitting
+// silently in the registry and panicking later on nil-interface method
+// dispatch, mid-request, once some device's Transport field happens to
+// match its name (code review finding, issue #26) — Register itself
+// should fail fast instead.
+func TestRegister_NilTransportPanics(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Error("Register with a nil Transport did not panic")
+		}
+	}()
+	adapter.Register("registry-test-nil", nil)
+}

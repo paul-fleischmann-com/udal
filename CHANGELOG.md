@@ -19,9 +19,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `UDAL_CUSTOM_ADAPTERS`, comma-separated) activates a registered transport by
   name for a given gateway process — a device whose `transport` matches an
   activated name routes through it, watched at `RegisterDevice` time and at
-  startup for already-registered devices, exactly like the built-ins. Read-only
-  transports return the new `adapter.ErrWriteNotSupported` from `WriteProperty`
-  (mapped to `Unimplemented`) instead of omitting the method. A Go-native
+  startup for already-registered devices, exactly like the built-ins — a
+  custom adapter can't be activated under a reserved built-in name
+  (`mqtt`/`http`/`can`), which the gateway now rejects at startup rather than
+  silently shadowing one or the other. Read-only transports return the new
+  `adapter.ErrWriteNotSupported` from `WriteProperty` (mapped to
+  `Unimplemented`) instead of omitting the method; `adapter.ErrNotFound`/
+  `adapter.ErrInvalidArgument` let a third-party adapter opt into the same
+  precise `NotFound`/`InvalidArgument` status mapping the built-ins have,
+  instead of every unrecognized error defaulting to `Internal`. A Go-native
   `plugin.Open(".so")` loader was considered and not built — Linux-only,
   requires an exact host/plugin toolchain match, and works against the
   single-binary portability goal. `internal/adapter/adaptertest` is a shared
