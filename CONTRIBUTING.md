@@ -47,8 +47,8 @@ cd code/sdk/python && pip install -e ".[dev]" && pytest
 # TypeScript SDK
 cd code/sdk/typescript && npm ci && npm test
 
-# Reflex Dashboard
-cd dashboard && pip install -e ".[dev]"
+# Reflex Dashboard (depends on the Python SDK above)
+cd code/sdk/python && pip install -e . && cd ../../../dashboard && pip install -e ".[dev]"
 
 # Start local MQTT broker (for integration tests)
 docker run -d -p 1883:1883 eclipse-mosquitto:2

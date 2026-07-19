@@ -1,0 +1,66 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "udal-dashboard"
+version = "0.1.0"
+description = "Reference web dashboard for UDAL (Universal Device Abstraction Layer), built with Reflex — device list, property browser, command dispatch, live telemetry."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "Apache-2.0" }
+dependencies = [
+    "reflex>=0.9",
+    # Not declared as a path/URL dependency (pure setuptools doesn't
+    # resolve relative paths portably) — install it explicitly first, see
+    # README.md/CONTRIBUTING.md and .github/workflows/ci.yml's reflex-ci
+    # job, both of which run `pip install -e ../code/sdk/python` before
+    # this package's own install.
+    "udal-sdk",
+]
+
+[project.optional-dependencies]
+dev = [
+    "mypy>=1.10",
+    "ruff>=0.6",
+]
+
+[tool.setuptools.packages.find]
+include = ["dashboard*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+# .web is Reflex's generated frontend build output (React/TS), never
+# hand-written — same reasoning code/sdk/python excludes its generated
+# udal/v1/ stubs.
+extend-exclude = [".web"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+exclude = ["\\.web/"]
+
+[[tool.mypy.overrides]]
+# reflex itself ships incomplete/loose typing in places (component props
+# accept **kwargs typed as Any by design, for Reflex's own flexibility) —
+# not this project's code to fix.
+module = "reflex.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# dashboard.py builds the component tree and wires event handlers — two
+# patterns central to Reflex's own API that its type stubs don't fully
+# support under strict mode: rx.vstack/rx.button/... (and every function
+# composing them, like device_list() below) are themselves typed loosely
+# enough that returning one triggers "no-any-return"; and passing an
+# argument to a parametrized event handler (`on_click=State.handler(arg)`,
+# the documented way to bind a click to a specific row's ID) resolves to a
+# callable Reflex's stubs don't model ("operator"/"misc"). Both are
+# framework-typing gaps, not bugs in this file — state.py (the actual
+# business logic) has no such exception and stays fully strict.
+module = "dashboard.dashboard"
+disable_error_code = ["no-any-return", "operator", "misc"]

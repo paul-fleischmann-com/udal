@@ -13,7 +13,7 @@ the gateway returned so callers can branch on it without depending on
 ``grpc.RpcError`` directly.
 """
 
-from udal.client import Client, PropertyUpdate
+from udal.client import Client, DeviceInfo, PropertyUpdate
 from udal.config import ClientConfig, DeviceConfig, TLSConfig
 from udal.device import CommandHandler, Device, Params
 from udal.errors import UdalError
@@ -24,6 +24,7 @@ __all__ = [
     "CommandHandler",
     "Device",
     "DeviceConfig",
+    "DeviceInfo",
     "Params",
     "PropertyUpdate",
     "TLSConfig",
