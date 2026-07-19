@@ -329,21 +329,36 @@ jobs:
         working-directory: dashboard
     steps:
       - uses: actions/checkout@v4
+      # dashboard/ doesn't exist yet (issue #19) — the reflex path filter
+      # above includes code/sdk/python/** (the dashboard is planned to
+      # depend on the Python SDK, per issue #19's own description) ahead of
+      # the dashboard itself landing, so every step below is guarded on
+      # dashboard/pyproject.toml actually existing — otherwise this job
+      # would fail outright on any Python SDK PR (pip install -e ".[dev]"
+      # in a directory with no pyproject.toml) instead of legitimately
+      # having nothing to check yet. hashFiles() only works after checkout
+      # (it reads the runner's filesystem), so this is a per-step `if`, not
+      # a job-level one.
       - uses: actions/setup-python@v5
+        if: hashFiles('dashboard/pyproject.toml') != ''
         with:
           python-version: "3.12"
           cache: pip
 
       - name: Install dependencies
+        if: hashFiles('dashboard/pyproject.toml') != ''
         run: pip install -e ".[dev]"
 
       - name: Lint (ruff)
+        if: hashFiles('dashboard/pyproject.toml') != ''
         run: ruff check .
 
       - name: Type check (mypy)
+        if: hashFiles('dashboard/pyproject.toml') != ''
         run: mypy .
 
       - name: Reflex build check
+        if: hashFiles('dashboard/pyproject.toml') != ''
         run: reflex export --no-zip 2>&1 | grep -v "^$" || true
 
 # ─── TypeScript SDK ───────────────────────────────────────────────────────────
