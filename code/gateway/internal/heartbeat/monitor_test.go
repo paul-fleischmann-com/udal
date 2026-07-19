@@ -143,6 +143,48 @@ func TestMonitor_SweepTransitionsStaleOnlineDeviceToOffline(t *testing.T) {
 	}
 }
 
+// TestMonitor_OnStatusChange covers issue #27's udal_devices_online gauge
+// hook: WithOnStatusChange must fire alongside the broker publish on both
+// Touch's online transition and Sweep's timeout-driven offline one.
+func TestMonitor_OnStatusChange(t *testing.T) {
+	reg := registry.NewMemoryRegistry()
+	deviceID := registerDevice(t, reg)
+	broker := newCaptureBroker(t, deviceID)
+
+	var mu sync.Mutex
+	var calls []string
+	m := heartbeat.NewMonitor(reg, broker.Broker, time.Second, time.Minute, heartbeat.WithOnStatusChange(func(id string, online bool) {
+		mu.Lock()
+		defer mu.Unlock()
+		state := "offline"
+		if online {
+			state = "online"
+		}
+		calls = append(calls, id+"="+state)
+	}))
+
+	if err := m.Touch(deviceID); err != nil {
+		t.Fatalf("Touch: %v", err)
+	}
+	waitForEvents(t, broker, 1)
+
+	lastSeen := time.Now().Add(-2 * time.Minute)
+	if err := reg.UpdateStatus(deviceID, api.DeviceStatusOnline, lastSeen); err != nil {
+		t.Fatalf("UpdateStatus: %v", err)
+	}
+	if err := m.Sweep(); err != nil {
+		t.Fatalf("Sweep: %v", err)
+	}
+	waitForEvents(t, broker, 2)
+
+	mu.Lock()
+	defer mu.Unlock()
+	want := []string{deviceID + "=online", deviceID + "=offline"}
+	if len(calls) != len(want) || calls[0] != want[0] || calls[1] != want[1] {
+		t.Errorf("onStatusChange calls = %v, want %v", calls, want)
+	}
+}
+
 func TestMonitor_SweepIgnoresFreshOnlineDevice(t *testing.T) {
 	reg := registry.NewMemoryRegistry()
 	deviceID := registerDevice(t, reg)

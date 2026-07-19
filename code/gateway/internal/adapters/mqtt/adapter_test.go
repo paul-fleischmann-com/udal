@@ -82,3 +82,23 @@ func TestAdapter_ConnectSucceedsWithV5(t *testing.T) {
 		t.Fatalf("v3 fallback attempted despite v5 success, %d calls", v3Calls)
 	}
 }
+
+func TestAdapter_Healthy(t *testing.T) {
+	a := New("mqtt://example.invalid:1883", nil)
+
+	if ok, detail := a.Healthy(); !ok {
+		t.Fatalf("Healthy() = (false, %q), want (true, \"\") for a fresh adapter", detail)
+	}
+
+	for i := 0; i < circuitBreakerMaxErrors; i++ {
+		a.cb.recordFailure()
+	}
+
+	ok, detail := a.Healthy()
+	if ok {
+		t.Fatal("Healthy() = true, want false once the circuit breaker is open")
+	}
+	if detail == "" {
+		t.Error("Healthy() detail is empty, want a reason")
+	}
+}

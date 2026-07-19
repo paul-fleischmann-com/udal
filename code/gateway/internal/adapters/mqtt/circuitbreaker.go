@@ -46,6 +46,18 @@ func newCircuitBreaker() *circuitBreaker {
 	return &circuitBreaker{now: time.Now}
 }
 
+// isOpen reports whether the breaker is currently open (rejecting calls
+// outright) — used by Adapter.Healthy (issue #27) to surface the same
+// state GET /health reports for this adapter. Doesn't itself trigger the
+// open->half-open transition allow() does; a health check observing "open"
+// a moment before it would've flipped to half-open on the next real call
+// is an acceptable staleness, not a correctness issue.
+func (cb *circuitBreaker) isOpen() bool {
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
+	return cb.state == circuitOpen
+}
+
 // allow reports whether a call may proceed, transitioning open->half-open
 // once circuitBreakerOpenDuration has elapsed since it opened.
 func (cb *circuitBreaker) allow() error {

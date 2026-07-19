@@ -17,6 +17,7 @@ import (
 	"github.com/paulefl/udal/code/gateway/internal/api"
 	"github.com/paulefl/udal/code/gateway/internal/auth"
 	"github.com/paulefl/udal/code/gateway/internal/capability"
+	"github.com/paulefl/udal/code/gateway/internal/metrics"
 	"github.com/paulefl/udal/code/gateway/internal/registry"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -445,16 +446,19 @@ func (s *DeviceService) GetProperty(ctx context.Context, req *udalv1.GetProperty
 	case d.Transport == "mqtt" && s.mqtt != nil:
 		v, err = s.mqtt.ReadProperty(ctx, req.GetDeviceId(), req.GetPropertyPath())
 		if err != nil {
+			metrics.AdapterErrors.WithLabelValues("mqtt_adapter").Inc()
 			return nil, mqttStatusError(err)
 		}
 	case d.Transport == "http" && s.http != nil:
 		v, err = s.http.ReadProperty(ctx, d, req.GetPropertyPath())
 		if err != nil {
+			metrics.AdapterErrors.WithLabelValues("http_adapter").Inc()
 			return nil, httpStatusError(err)
 		}
 	case d.Transport == "can" && s.can != nil:
 		v, err = s.can.ReadProperty(ctx, d, req.GetPropertyPath())
 		if err != nil {
+			metrics.AdapterErrors.WithLabelValues("can_adapter").Inc()
 			return nil, canStatusError(err)
 		}
 	default:
@@ -523,6 +527,7 @@ func (s *DeviceService) SetProperty(ctx context.Context, req *udalv1.SetProperty
 
 	if d.Transport == "mqtt" && s.mqtt != nil {
 		if err := s.mqtt.WriteProperty(ctx, req.GetDeviceId(), req.GetPropertyPath(), v); err != nil {
+			metrics.AdapterErrors.WithLabelValues("mqtt_adapter").Inc()
 			return nil, mqttStatusError(err)
 		}
 		// No broker.Publish here: the device's own props/{path} publish
@@ -538,6 +543,7 @@ func (s *DeviceService) SetProperty(ctx context.Context, req *udalv1.SetProperty
 
 	if d.Transport == "can" && s.can != nil {
 		if err := s.can.WriteProperty(ctx, d, req.GetPropertyPath(), v); err != nil {
+			metrics.AdapterErrors.WithLabelValues("can_adapter").Inc()
 			return nil, canStatusError(err)
 		}
 		// No broker.Publish here, same reasoning as the mqtt branch above:

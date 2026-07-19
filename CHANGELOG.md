@@ -9,6 +9,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Health + Prometheus metrics endpoints (F-21/F-22, `code/gateway/internal/health`
+  + `code/gateway/internal/metrics`), served on the metrics listener
+  (`adapters.metrics_port`/`UDAL_METRICS_PORT`, first given a real listener by #28)
+  alongside `/debug/log-level`: `GET /health` returns `503 {"status":"starting"}`
+  until every listener has actually bound its port (REST/webhook/metrics listeners
+  now bind synchronously before startup proceeds, matching the gRPC listener, so a
+  bind failure can't race a false-positive `SetReady(true)`), then `200
+  {"status":"ok"}` (plus a per-adapter `"degraded"` status, still HTTP 200, for any
+  adapter implementing the new `health.Reporter` interface — MQTT's circuit breaker
+  being open, or CAN's read loop having stopped on a real socket error; HTTP
+  doesn't implement it, having no comparable persistent-connection failure mode;
+  non-`GET` requests get `405`). `GET /metrics` exposes all four required
+  Prometheus collectors (`udal_devices_online` gauge,
+  `udal_requests_total{operation,status}` counter,
+  `udal_request_duration_seconds{operation}` histogram,
+  `udal_adapter_errors_total{adapter}` counter) via `promhttp.Handler()` — a new
+  `metrics.Interceptor` records the first two on every gRPC request (also covering
+  REST, proxied through the same server; stream duration isn't recorded for
+  long-lived streaming RPCs like `StreamCommands`, which would otherwise always
+  land in the latency histogram's `+Inf` bucket), `DeviceService` increments
+  adapter errors at its three transport call sites, and `heartbeat.Monitor` gained
+  an optional `WithOnStatusChange` callback that re-counts online devices from the
+  registry and sets the devices-online gauge to that exact value on every
+  transition (self-correcting — avoids drift from a process restart or from
+  `Touch`'s already-documented non-atomic race under concurrent calls for the same
+  device) off its existing online/offline transition point (#42). Verified
+  end-to-end against a running gateway: a real REST request produced
+  `udal_requests_total{operation="ListDevices",status="Unauthenticated"}` and a
+  populated duration histogram. (#27)
 - Structured JSON logging (F-23, `code/gateway/internal/logging`): every log
   line is now JSON (`slog.NewJSONHandler`, `time` renamed to `timestamp` per
   spec) instead of the previous plain-text handler. `component` comes from a

@@ -16,6 +16,8 @@ import (
 	"time"
 
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+
 	udalv1 "github.com/paulefl/udal/code/api/proto/gen/udal/v1"
 	canadapter "github.com/paulefl/udal/code/gateway/internal/adapters/can"
 	httpadapter "github.com/paulefl/udal/code/gateway/internal/adapters/http"
@@ -24,8 +26,10 @@ import (
 	"github.com/paulefl/udal/code/gateway/internal/auth"
 	"github.com/paulefl/udal/code/gateway/internal/capability"
 	"github.com/paulefl/udal/code/gateway/internal/config"
+	"github.com/paulefl/udal/code/gateway/internal/health"
 	"github.com/paulefl/udal/code/gateway/internal/heartbeat"
 	"github.com/paulefl/udal/code/gateway/internal/logging"
+	"github.com/paulefl/udal/code/gateway/internal/metrics"
 	"github.com/paulefl/udal/code/gateway/internal/registry"
 	"github.com/paulefl/udal/code/gateway/internal/service"
 	"google.golang.org/grpc"
@@ -122,8 +126,40 @@ func main() {
 		svc.SetCapabilityRegistry(capabilityReg)
 	}
 
+	// ─── Health readiness (F-21, issue #27) ───────────────────────────────────
+	// healthChecker starts not-ready; SetReady(true) is called once every
+	// listener below is up. Adapter Reporters (mqtt/can) are registered as
+	// each adapter is constructed further down.
+	healthChecker := health.NewChecker()
+
 	// ─── Heartbeat / online status (F-04, issue #42) ──────────────────────────
-	presence := heartbeat.NewMonitor(reg, broker, time.Duration(cfg.Gateway.HeartbeatInterval), time.Duration(cfg.Gateway.DeviceTimeout))
+	// WithOnStatusChange drives udal_devices_online (F-22, issue #27). It
+	// re-counts from the registry and Set()s the gauge to that exact value
+	// on every transition, rather than Inc()/Dec()ing incrementally —
+	// deliberately, so the gauge self-corrects instead of drifting:
+	//   - Inc/Dec alone starts every fresh process at 0 regardless of
+	//     devices the (persistent, bbolt-backed) registry already has
+	//     marked online from before a restart — the first Sweep-driven
+	//     Dec() for one of those would send the gauge negative.
+	//   - Touch's read-then-write (Get, then UpdateStatus) is documented as
+	//     intentionally non-atomic ("a rare double transition ... is
+	//     tolerated", see heartbeat.Monitor's doc comment) — harmless
+	//     for the broker publish it was tolerated for, but two concurrent
+	//     Touch calls for the same device (e.g. a StreamCommands heartbeat
+	//     tick racing a RegisterDevice) would otherwise double-Inc() with
+	//     only one eventual Dec(), permanently overcounting.
+	// A full re-count on every call is a registry List, not free, but
+	// transitions are inherently low-frequency (device connect/disconnect
+	// events, not a per-request hot path).
+	presence := heartbeat.NewMonitor(reg, broker, time.Duration(cfg.Gateway.HeartbeatInterval), time.Duration(cfg.Gateway.DeviceTimeout), heartbeat.WithOnStatusChange(func(deviceID string, online bool) {
+		isOnline := true
+		devices, err := reg.List(registry.ListFilter{Online: &isOnline})
+		if err != nil {
+			log.Warn("list online devices for udal_devices_online", "err", err)
+			return
+		}
+		metrics.DevicesOnline.Set(float64(len(devices)))
+	}))
 	svc.SetPresenceMonitor(presence)
 	presenceCtx, presenceCancel := context.WithCancel(context.Background())
 	go presence.Run(presenceCtx)
@@ -141,6 +177,7 @@ func main() {
 			os.Exit(1)
 		}
 		svc.SetMQTTAdapter(mqttAdapter)
+		healthChecker.Register("mqtt_adapter", mqttAdapter)
 		log.Info("connected to MQTT broker", "broker", mqttBroker)
 
 		mqttDevices, err := reg.List(registry.ListFilter{Transport: "mqtt"})
@@ -200,9 +237,18 @@ func main() {
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
 	}
+	// Bind synchronously (like the gRPC listener below) so a port conflict
+	// or other bind failure is caught here, before healthChecker.SetReady(true)
+	// — otherwise GET /health could report ready while this listener never
+	// came up (issue #27 review finding).
+	webhookLis, err := net.Listen("tcp", webhookAddr)
+	if err != nil {
+		log.Error("listen HTTP webhook", "addr", webhookAddr, "err", err)
+		os.Exit(1)
+	}
 	go func() {
 		log.Info("HTTP adapter webhook receiver listening", "addr", webhookAddr)
-		if err := webhookServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := webhookServer.Serve(webhookLis); err != nil && err != http.ErrServerClosed {
 			log.Error("HTTP webhook serve", "err", err)
 		}
 	}()
@@ -238,6 +284,7 @@ func main() {
 			os.Exit(1)
 		}
 		svc.SetCANAdapter(canAdapterInst)
+		healthChecker.Register("can_adapter", canAdapterInst)
 		log.Info("CAN adapter listening", "interface", canIface, "dbc", dbcPath)
 
 		canDevices, err := reg.List(registry.ListFilter{Transport: "can"})
@@ -252,25 +299,30 @@ func main() {
 		}
 	}
 
-	// ─── Metrics/debug listener (issue #28) ───────────────────────────────────
-	// Currently hosts only /debug/log-level (F-23 AC: "UDAL_LOG_LEVEL=debug
-	// enables debug logs without restart" — see logging.LevelHandler's doc
-	// comment for why this endpoint, not literally re-reading the env var,
-	// is what makes that true). adapters.metrics_port/UDAL_METRICS_PORT has
-	// been a parsed-but-unused config stub since issue #41; issue #27 will
-	// add /health and /metrics to this same mux.
+	// ─── Metrics/debug listener (issues #27, #28) ─────────────────────────────
+	// Hosts /debug/log-level (issue #28), /health (F-21) and /metrics (F-22).
+	// adapters.metrics_port/UDAL_METRICS_PORT has been a parsed-but-unused
+	// config stub since issue #41.
 	metricsAddr := config.ResolveAddr(os.Getenv("UDAL_METRICS_ADDR"), cfg.Gateway.MetricsPort, 9090)
 	metricsMux := http.NewServeMux()
 	metricsMux.Handle("/debug/log-level", logging.LevelHandler(levelVar))
+	metricsMux.Handle("/health", healthChecker.Handler())
+	metricsMux.Handle("/metrics", promhttp.Handler())
 	metricsServer := &http.Server{
 		Addr:         metricsAddr,
 		Handler:      metricsMux,
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
 	}
+	// Bind synchronously — see webhookLis above for why.
+	metricsLis, err := net.Listen("tcp", metricsAddr)
+	if err != nil {
+		log.Error("listen metrics/debug", "addr", metricsAddr, "err", err)
+		os.Exit(1)
+	}
 	go func() {
 		log.Info("metrics/debug listener listening", "addr", metricsAddr)
-		if err := metricsServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := metricsServer.Serve(metricsLis); err != nil && err != http.ErrServerClosed {
 			log.Error("metrics/debug serve", "err", err)
 		}
 	}()
@@ -315,12 +367,16 @@ func main() {
 	// requestLogger runs first in the interceptor chain (before auth) so a
 	// request that fails authentication still gets a trace ID and a
 	// logged outcome (F-23 AC: "Request log line includes trace_id").
+	// requestMetrics (issue #27) records udal_requests_total/
+	// udal_request_duration_seconds for every request; order relative to
+	// requestLogger/authenticator doesn't matter, it doesn't touch ctx.
 	requestLogger := &logging.Interceptor{Log: baseLog.With("component", "gateway.api")}
+	var requestMetrics metrics.Interceptor
 
 	// ─── gRPC server ─────────────────────────────────────────────────────────
 	serverOpts := []grpc.ServerOption{
-		grpc.ChainUnaryInterceptor(requestLogger.UnaryInterceptor, authenticator.UnaryInterceptor),
-		grpc.ChainStreamInterceptor(requestLogger.StreamInterceptor, authenticator.StreamInterceptor),
+		grpc.ChainUnaryInterceptor(requestLogger.UnaryInterceptor, requestMetrics.UnaryInterceptor, authenticator.UnaryInterceptor),
+		grpc.ChainStreamInterceptor(requestLogger.StreamInterceptor, requestMetrics.StreamInterceptor, authenticator.StreamInterceptor),
 	}
 	var dialCreds credentials.TransportCredentials
 	// tlsConfig is shared with the HTTP listener below (Server.TLSConfig) so
@@ -448,25 +504,41 @@ func main() {
 		WriteTimeout: 10 * time.Second,
 	}
 
+	// Bind synchronously — see webhookLis above for why. TLS (if
+	// configured) is applied by wrapping the raw listener rather than
+	// ListenAndServeTLS, so the bind itself still happens here rather than
+	// inside the goroutine below.
+	httpLis, err := net.Listen("tcp", httpAddr)
+	if err != nil {
+		log.Error("listen REST gateway", "addr", httpAddr, "err", err)
+		os.Exit(1)
+	}
+	if tlsCertPath != "" {
+		// Cert/key already loaded into httpServer.TLSConfig.Certificates above.
+		httpLis = tls.NewListener(httpLis, httpServer.TLSConfig)
+	}
+
 	go func() {
 		log.Info("REST gateway listening", "addr", httpAddr, "tls", tlsCertPath != "")
-		var serveErr error
-		if tlsCertPath != "" {
-			// Cert/key already loaded into httpServer.TLSConfig.Certificates above.
-			serveErr = httpServer.ListenAndServeTLS("", "")
-		} else {
-			serveErr = httpServer.ListenAndServe()
-		}
-		if serveErr != nil && serveErr != http.ErrServerClosed {
-			log.Error("HTTP serve", "err", serveErr)
+		if err := httpServer.Serve(httpLis); err != nil && err != http.ErrServerClosed {
+			log.Error("HTTP serve", "err", err)
 		}
 	}()
+
+	// Every listener above has now actually bound its port (not merely
+	// started a goroutine — see webhookLis/metricsLis/httpLis above, issue
+	// #27 review finding); GET /health now reports ready (F-21).
+	healthChecker.SetReady(true)
 
 	// ─── Graceful shutdown ────────────────────────────────────────────────────
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
+	// Reported not-ready first, before actually stopping anything, so a
+	// readiness probe mid-drain sees 503 and a load balancer can evacuate
+	// traffic before the listeners actually go away.
+	healthChecker.SetReady(false)
 	log.Info("shutting down")
 	grpcServer.GracefulStop()
 	shutCtx, shutCancel := context.WithTimeout(context.Background(), 5*time.Second)
