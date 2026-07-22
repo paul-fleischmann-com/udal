@@ -1,0 +1,20 @@
+[package]
+name = "embedded-size-check"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "QR-08 flash/RAM budget check: a minimal Cortex-M firmware image linking udal-sdk's no_std `mqtt` feature. Not a workspace member of ../.. — see build.rs's doc comment there for why."
+
+[dependencies]
+cortex-m = "0.7"
+cortex-m-rt = "0.7"
+embedded-io = "0.6"
+panic-halt = "0.2"
+udal-sdk = { path = "../..", default-features = false, features = ["mqtt"] }
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

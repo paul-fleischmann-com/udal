@@ -291,7 +291,8 @@
 
     // SDKs → Gateway API
     { "from": "sdks.sdk_go",         "to": "gateway.api.grpc",       "label": "gRPC",              "kind": "calls" },
-    { "from": "sdks.sdk_rust",       "to": "mqtt_broker",            "label": "MQTT (embedded)",   "kind": "uses" },
+    { "from": "sdks.sdk_rust",       "to": "mqtt_broker",            "label": "MQTT (embedded, no_std)", "kind": "uses" },
+    { "from": "sdks.sdk_rust",       "to": "gateway.api.grpc",       "label": "gRPC (std feature)", "kind": "calls" },
     { "from": "sdks.sdk_python",     "to": "gateway.api.rest",       "label": "REST",              "kind": "calls" },
     { "from": "sdks.sdk_typescript", "to": "gateway.api.rest",       "label": "REST / WebSocket",  "kind": "calls" },
     { "from": "sdks.dashboard",      "to": "sdks.sdk_python",        "label": "uses",              "kind": "uses" },

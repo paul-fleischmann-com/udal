@@ -9,6 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Rust client SDK (req42.adoc §7.3, QR-08, `code/sdk/rust`): two independent builds
+  behind Cargo features. `std` (default) is the full application- (`Client`) and
+  device-side (`Device`) SDK over gRPC via `tonic`/`prost`, mirroring the Go and
+  Python SDKs' operation set (`read_property`/`write_property`/`send_command`/
+  `subscribe`, `run`/`publish_property`/`on_command` with the same 1s–30s
+  exponential-backoff reconnect as the other SDKs); `.proto` codegen uses a vendored
+  `protoc` (`protoc-bin-vendored`) plus a small local vendor copy of the
+  well-known-type and `google.api.http` annotation `.proto` files
+  (`third_party/`), so it needs neither a system `protoc` install nor network access
+  to buf.build at build time. `mqtt` is a device-side-only, `no_std`, no-allocator
+  build for bare-metal/RTOS targets (QR-08) — a from-scratch, `heapless`-based MQTT
+  v3.1.1 client (`CONNECT`/`PUBLISH`/`SUBSCRIBE`, QoS 0) plus a hand-rolled JSON codec
+  matching the gateway MQTT adapter's wire format, generic over any
+  `embedded_io::Read + Write` transport supplied by the firmware. Every operation
+  returns `Result<_, UdalError>` per spec. `examples/embedded-size-check` links the
+  `mqtt` build into a minimal Cortex-M (`thumbv7em-none-eabi`) firmware image,
+  measured in CI against QR-08's budget (flash < 8 KB, RAM < 2 KB) — passes at ~7.5 KB
+  flash / 0 B RAM; getting there required a hand-rolled fixed-point float formatter
+  in place of `core::fmt`'s `Display for f64` (the shortest-round-trip algorithm
+  alone is >10 KB once linked in) and scaling into `u32` rather than `u64` (Cortex-M4
+  has no hardware 64-bit divide). `cargo build/test/clippy --all-features` and
+  `cargo fmt --check` pass; `cargo audit` reports no known vulnerabilities. (#34)
 - Reflex reference dashboard (`dashboard`, issue #19): device list (polled, with
   online/offline status), a property browser (read/write a named property — the
   gateway has no "list properties" operation, so this needs the path already known),
