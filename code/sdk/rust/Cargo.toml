@@ -1,0 +1,38 @@
+[package]
+name = "udal-sdk"
+version = "0.1.0"
+edition = "2021"
+description = "Rust client SDK for UDAL (Universal Device Abstraction Layer) — application side (std, gRPC) and embedded device side (no_std, MQTT-only)"
+license = "Apache-2.0"
+readme = "README.md"
+
+[lib]
+name = "udal_sdk"
+path = "src/lib.rs"
+
+[dependencies]
+embedded-io = { version = "0.6.1", optional = true }
+heapless = { version = "0.9.1", optional = true }
+prost = { version = "0.14.1", optional = true }
+prost-types = { version = "0.14.1", optional = true }
+tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "time"], optional = true }
+tokio-stream = { version = "0.1.19", features = ["sync"], optional = true }
+tonic = { version = "0.14.6", default-features = false, features = ["transport", "codegen", "tls-ring"], optional = true }
+tonic-prost = { version = "0.14.6", default-features = false, optional = true }
+
+[features]
+default = ["std"]
+# Full application- and device-side SDK over gRPC (req42.adoc §7.3), for
+# hosts with an allocator and an OS (desktop/server/RTOS-with-std). Pulls in
+# tokio + tonic, which do not build for bare-metal `no_std` targets.
+std = ["dep:tokio", "dep:tonic", "dep:tonic-prost", "dep:prost", "dep:prost-types", "dep:tokio-stream"]
+# Device-side-only SDK over MQTT (QR-08): compiles `no_std`, no allocator,
+# for bare-metal/RTOS targets. Independent of `std` — enabling both (e.g.
+# `--all-features`) builds fine, since `std` is only opted out of via
+# `#![cfg_attr(not(feature = "std"), no_std)]`, not a hard crate-wide switch.
+mqtt = ["dep:heapless", "dep:embedded-io"]
+
+[build-dependencies]
+protoc-bin-vendored = "3.2.0"
+tonic-prost-build = "0.14.6"
+

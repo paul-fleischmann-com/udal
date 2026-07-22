@@ -264,7 +264,9 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: code/sdk/rust
+          workspaces: |
+            code/sdk/rust
+            code/sdk/rust/examples/embedded-size-check
 
       - name: Build
         run: cargo build --all-features
@@ -282,6 +284,55 @@ jobs:
         run: |
           cargo install cargo-audit --quiet
           cargo audit
+
+  # Issue #34 AC: "`no_std` feature flag compiles for `arm-none-eabi`
+  # (Cortex-M) targets" and "QR-08: flash < 8 KB, RAM < 2 KB when compiled
+  # `no_std` + MQTT-only feature flag". A separate job (not a step in
+  # rust-ci above) since it needs its own toolchain target and a
+  # standalone crate — examples/embedded-size-check isn't a workspace
+  # member of code/sdk/rust (see that crate's Cargo.toml doc comment):
+  # `cargo build --all-features` there builds for the host and enables
+  # `std` + `mqtt` together, which is a different, non-`no_std` build (see
+  # code/sdk/rust/src/lib.rs's module docs on why that's expected).
+  rust-embedded-size-check:
+    name: Rust — no_std embedded build + flash/RAM budget (QR-08)
+    needs: changes
+    if: needs.changes.outputs.rust == 'true' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: code/sdk/rust/examples/embedded-size-check
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: thumbv7em-none-eabi
+          components: llvm-tools
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: code/sdk/rust/examples/embedded-size-check
+
+      - name: Build (no_std, mqtt feature only)
+        run: cargo build --release
+
+      - name: Check flash/RAM budget (flash < 8 KB, RAM < 2 KB)
+        run: |
+          cargo install cargo-binutils --quiet
+          SIZE_OUTPUT=$(cargo size --release -- -A)
+          echo "$SIZE_OUTPUT"
+          # `-A` (sysv format) lists one section per line: "name  size  addr".
+          # Flash = everything the linker places in FLASH (.vector_table,
+          # .text, .rodata, and .data's load-time copy); RAM = everything
+          # it places in RAM at runtime (.data, .bss) — see memory.x.
+          FLASH=$(echo "$SIZE_OUTPUT" | awk '/^\.(vector_table|text|rodata|data)[[:space:]]/ {sum += $2} END {print sum+0}')
+          RAM=$(echo "$SIZE_OUTPUT" | awk '/^\.(data|bss)[[:space:]]/ {sum += $2} END {print sum+0}')
+          echo "flash (vector_table+text+rodata+data): $FLASH bytes (limit 8192)"
+          echo "RAM (data+bss): $RAM bytes (limit 2048)"
+          FAIL=0
+          if [ "$FLASH" -ge 8192 ]; then echo "ERROR: flash usage exceeds QR-08's 8 KB budget"; FAIL=1; fi
+          if [ "$RAM" -ge 2048 ]; then echo "ERROR: RAM usage exceeds QR-08's 2 KB budget"; FAIL=1; fi
+          exit $FAIL
 
 # ─── Python ───────────────────────────────────────────────────────────────────
   python-ci:
