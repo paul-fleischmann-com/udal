@@ -22,6 +22,63 @@ async def test_client_is_async_context_manager(gateway_url: str) -> None:
         assert isinstance(c, Client)
 
 
+async def test_list_devices_returns_all(client: Client, fake_service: FakeDeviceService) -> None:
+    from tests.conftest import now_timestamp
+
+    fake_service.devices = [
+        device_pb2.Device(
+            id="dev-1",
+            name="sensor",
+            capability="temperature-sensor",
+            transport="mqtt",
+            status=device_pb2.DEVICE_STATUS_ONLINE,
+            last_seen=now_timestamp(),
+        ),
+        device_pb2.Device(
+            id="dev-2",
+            name="actuator",
+            capability="valve",
+            transport="can",
+            status=device_pb2.DEVICE_STATUS_OFFLINE,
+            last_seen=now_timestamp(),
+        ),
+    ]
+    devices = await client.list_devices()
+    assert [d.id for d in devices] == ["dev-1", "dev-2"]
+    assert devices[0].status == "online"
+    assert devices[1].status == "offline"
+    assert devices[0].last_seen.tzinfo == UTC
+
+
+async def test_list_devices_filters_by_capability(
+    client: Client, fake_service: FakeDeviceService
+) -> None:
+    fake_service.devices = [
+        device_pb2.Device(id="dev-1", capability="temperature-sensor", transport="mqtt"),
+        device_pb2.Device(id="dev-2", capability="valve", transport="can"),
+    ]
+    devices = await client.list_devices(capability="valve")
+    assert [d.id for d in devices] == ["dev-2"]
+
+
+async def test_get_device_returns_matching_device(
+    client: Client, fake_service: FakeDeviceService
+) -> None:
+    fake_service.devices = [device_pb2.Device(id="dev-1", name="sensor", transport="mqtt")]
+    device = await client.get_device("dev-1")
+    assert device.id == "dev-1"
+    assert device.name == "sensor"
+    assert device.transport == "mqtt"
+
+
+async def test_get_device_not_found_raises_udal_error(
+    client: Client, fake_service: FakeDeviceService
+) -> None:
+    with pytest.raises(UdalError) as exc_info:
+        await client.get_device("no-such-device")
+    assert exc_info.value.code == grpc.StatusCode.NOT_FOUND
+
+
 async def test_get_property_returns_value(client: Client, fake_service: FakeDeviceService) -> None:
     fake_service.properties[("dev-1", "temperature")] = device_pb2.PropertyValue(float_val=21.5)
     value = await client.get_property("dev-1", "temperature")

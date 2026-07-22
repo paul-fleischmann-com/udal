@@ -23,6 +23,8 @@ class FakeDeviceService(device_pb2_grpc.DeviceServiceServicer):
 
     def __init__(self) -> None:
         self.properties: dict[tuple[str, str], device_pb2.PropertyValue] = {}
+        self.devices: list[device_pb2.Device] = []
+        self.get_device_error: grpc.StatusCode | None = None
         self.register_response_id = "dev-generated"
         self.register_error: grpc.StatusCode | None = None
         self.register_calls: list[device_pb2.RegisterDeviceRequest] = []
@@ -55,6 +57,26 @@ class FakeDeviceService(device_pb2_grpc.DeviceServiceServicer):
         if value is None:
             await context.abort(grpc.StatusCode.NOT_FOUND, "property not found")
         return device_pb2.GetPropertyResponse(value=value)
+
+    async def GetDevice(
+        self, request: device_pb2.GetDeviceRequest, context: grpc.aio.ServicerContext[Any, Any]
+    ) -> device_pb2.GetDeviceResponse:
+        if self.get_device_error is not None:
+            await context.abort(self.get_device_error, "simulated failure")
+        matched = next((d for d in self.devices if d.id == request.id), None)
+        if matched is None:
+            await context.abort(grpc.StatusCode.NOT_FOUND, "device not found")
+        return device_pb2.GetDeviceResponse(device=matched)
+
+    async def ListDevices(
+        self, request: device_pb2.ListDevicesRequest, context: grpc.aio.ServicerContext[Any, Any]
+    ) -> device_pb2.ListDevicesResponse:
+        devices = self.devices
+        if request.capability:
+            devices = [d for d in devices if d.capability == request.capability]
+        if request.transport:
+            devices = [d for d in devices if d.transport == request.transport]
+        return device_pb2.ListDevicesResponse(devices=devices)
 
     async def SetProperty(
         self, request: device_pb2.SetPropertyRequest, context: grpc.aio.ServicerContext[Any, Any]

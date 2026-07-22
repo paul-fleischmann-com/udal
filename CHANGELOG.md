@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Reflex reference dashboard (`dashboard`, issue #19): device list (polled, with
+  online/offline status), a property browser (read/write a named property — the
+  gateway has no "list properties" operation, so this needs the path already known),
+  command dispatch (JSON-encoded params), and live telemetry via `Client.subscribe`
+  (a genuine server push, updating the UI with no page reload) — all built on the
+  Python SDK (#18). Gateway connection is env-var configured
+  (`UDAL_GATEWAY_URL`/`UDAL_API_KEY`), no login form, matching this being a reference
+  demonstrator rather than a production admin tool. `ruff`/`mypy --strict` pass, with
+  two narrowly-scoped, documented exceptions for Reflex's own typing gaps
+  (`no-any-return` on component-builder functions; `operator`/`misc` on parametrized
+  event handlers) — `dashboard/dashboard/state.py`, the actual business logic, has no
+  such exception. `reflex export --no-zip` succeeds, producing a working production
+  build. The Python SDK gained `Client.list_devices`/`get_device` (and a `DeviceInfo`
+  type) to support this — not part of req42.adoc §7.3's minimum SDK contract, added
+  because the dashboard (and any real device-listing UI) needs it and the gateway
+  already exposes the underlying RPCs. (#19)
 - Python client SDK (req42.adoc §7.3, `code/sdk/python`): asyncio-based, application
   (`Client`) and device (`Device`) side, mirroring the Go SDK's operation set —
   `get_property`/`write_property`/`send_command`/`subscribe` (async iterator) on the
