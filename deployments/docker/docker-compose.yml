@@ -1,0 +1,62 @@
+# Demonstrator stack (issue #30): gateway + Mosquitto MQTT broker + a
+# simulated MQTT temperature-sensor device. Run from this directory:
+#   cd deployments/docker && docker compose up --build
+# See examples/README.adoc for the full walkthrough (register the device,
+# read/write a property, subscribe to updates, view it live in the Reflex
+# dashboard).
+#
+# Not for production use: UDAL_DEV_INSECURE skips TLS, the bootstrap API
+# key is a fixed demo value, and Mosquitto allows anonymous connections.
+
+services:
+  mosquitto:
+    image: eclipse-mosquitto:2
+    ports:
+      - "1883:1883"
+    volumes:
+      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+    healthcheck:
+      # mosquitto_pub only needs a successful connect + publish (no
+      # subscriber ever consumes this topic) — mosquitto_sub with -C/-W
+      # would instead wait for a message that's never coming and report
+      # unhealthy forever, permanently blocking gateway/device-simulator's
+      # `depends_on: condition: service_healthy`.
+      test: ["CMD", "mosquitto_pub", "-h", "localhost", "-t", "healthcheck", "-m", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  gateway:
+    build:
+      context: ../..
+      dockerfile: deployments/docker/Dockerfile
+    depends_on:
+      mosquitto:
+        condition: service_healthy
+    environment:
+      # Local demo only — see the file-level comment above.
+      UDAL_DEV_INSECURE: "true"
+      UDAL_MQTT_BROKER: "tcp://mosquitto:1883"
+      UDAL_BOOTSTRAP_API_KEY: "demo:admin:demo-api-key"
+      # The image's final stage (gcr.io/distroless/static:nonroot) has no
+      # WORKDIR, so cwd is "/" — not writable by the nonroot user the
+      # default "./udal-registry.db" would resolve into. /tmp is writable
+      # in distroless nonroot images; this DB is ephemeral demo data
+      # anyway (no volume — a `docker compose down` discards it).
+      UDAL_REGISTRY_PATH: "/tmp/udal-registry.db"
+    ports:
+      - "50051:50051" # gRPC (SDKs, dashboard, grpcurl)
+      - "8080:8080"   # REST (curl walkthrough)
+      - "9090:9090"   # GET /health, /metrics
+
+  device-simulator:
+    build:
+      context: ../../examples/device-simulator
+    depends_on:
+      mosquitto:
+        condition: service_healthy
+    environment:
+      MQTT_HOST: mosquitto
+      MQTT_PORT: "1883"
+      DEVICE_ID: sim-temp-1
+      INTERVAL_SECONDS: "5"

@@ -67,6 +67,7 @@ jobs:
               - 'code/gateway/**'
               - 'deployments/docker/**'
               - 'Dockerfile'
+              - 'examples/**'
             architecture:
               - 'architecture.jsonc'
             schema:
@@ -528,6 +529,26 @@ jobs:
             exit 1
           fi
 
+  demo-compose:
+    name: Demo — Docker Compose build + verify
+    # Deliberately not `needs: [go-build-test]` like docker-build above --
+    # that chain means docker-build silently skips (not fails) whenever
+    # go-build-test itself skips on a non-Go change, even if its own `if:`
+    # condition would otherwise be true (issue #30 PR review). This job
+    # builds the gateway image itself via `compose up --build`, so it has
+    # no such prerequisite.
+    needs: changes
+    if: needs.changes.outputs.docker == 'true' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # docker compose v2 + curl + jq are all preinstalled on this runner
+      # image -- no setup steps needed. TEAR_DOWN=1 so the stack doesn't
+      # linger past this job.
+      - name: Build, start, and verify the demonstrator stack
+        run: TEAR_DOWN=1 bash examples/verify-demo.sh
+
 # ─── Capability Schema Validation ────────────────────────────────────────────
   schema-validate:
     name: Schema — Validate capability examples
@@ -583,6 +604,7 @@ jobs:
       - typescript-ci
       - proto-ci
       - docker-build
+      - demo-compose
       - schema-validate
       - architecture-validate
     if: always()
