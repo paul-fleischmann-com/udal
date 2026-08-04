@@ -24,6 +24,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   in the Reflex dashboard (#19). Referenced from the root `README.adoc`'s
   new "Getting Started" section. Not a production deployment — see the
   file-level comments in `docker-compose.yml` for what's demo-only.
+  `examples/verify-demo.sh`/`.ps1` script the same walkthrough end-to-end
+  (build, start, register, read, write, status check) for Linux/Mac and
+  Windows respectively; CI runs the `.sh` version on every PR touching
+  `deployments/docker/`, `examples/`, or `code/gateway/` (new "Demo — Docker
+  Compose build + verify" job), so a regression here fails CI instead of
+  only surfacing on manual testing — which is how the device-simulator's
+  MQTT `.../get`/`.../set` request/response handling (ReadProperty/
+  WriteProperty aren't a cached last-known-value, they block on a live
+  device reply) and a CRLF-mangled shebang were actually found and fixed.
 - TypeScript/Node.js client SDK (req42.adoc §7.3, `code/sdk/typescript`): application-side
   only (`UdalClient`) — no device-side registration, matching the browser/Node.js use
   cases this SDK targets. `readProperty`/`writeProperty`/`sendCommand` (and

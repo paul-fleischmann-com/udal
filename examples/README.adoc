@@ -20,16 +20,18 @@ and Mosquitto allows anonymous connections.
   streaming `Subscribe` step (gRPC server-streaming has no REST mapping —
   see the note in step 5)
 
-TIP: On Windows, the `curl -d '{...}'` commands below (single-quoted,
-multi-line JSON, `\` line continuation) are bash syntax and won't work
-as-is in `cmd.exe` or PowerShell. link:verify-demo.ps1[`verify-demo.ps1`]
-runs the same steps — build, start, register, read, write, status check —
-using `Invoke-RestMethod` instead, with no shell-quoting to get wrong:
+TIP: Steps 1-4 below are also available as a single script, in two
+flavors: link:verify-demo.sh[`verify-demo.sh`] (Linux/Mac, `bash` + `curl`
++ `jq` — this is what CI runs on every relevant PR) and
+link:verify-demo.ps1[`verify-demo.ps1`] (Windows — the `curl -d '{...}'`
+commands below are bash syntax and don't translate as-is to `cmd.exe`/
+PowerShell, so this uses `Invoke-RestMethod` instead):
 +
-[source,powershell]
+[source,shell]
 ----
 cd examples
-.\verify-demo.ps1
+./verify-demo.sh          # Linux/Mac
+.\verify-demo.ps1         # Windows
 ----
 
 == 1. Start the stack
