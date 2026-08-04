@@ -12,6 +12,9 @@ import type { DeviceInfo, PropertyUpdate } from "./types.js";
 import { deviceInfoFromJson, type DeviceJson } from "./types.js";
 import { fromJson, toJson, type PropertyValue, type PropertyValueJson } from "./value.js";
 
+interface GetDeviceResponseJson {
+  device?: DeviceJson;
+}
 interface GetPropertyResponseJson {
   value?: PropertyValueJson;
 }
@@ -55,12 +58,12 @@ export class UdalClient {
 
   async getDevice(id: string, opts?: { signal?: AbortSignal }): Promise<DeviceInfo> {
     this.checkOpen();
-    const json = await this.http.request<DeviceJson>({
+    const json = await this.http.request<GetDeviceResponseJson>({
       method: "GET",
       path: `/v1/devices/${encodeURIComponent(id)}`,
       signal: opts?.signal,
     });
-    return deviceInfoFromJson(json);
+    return deviceInfoFromJson(json.device ?? {});
   }
 
   async listDevices(

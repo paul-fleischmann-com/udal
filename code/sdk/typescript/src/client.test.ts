@@ -54,15 +54,21 @@ describe("UdalClient", () => {
   });
 
   it("getDevice unwraps and maps device status", async () => {
+    // The real response is { "device": {...} } (v1GetDeviceResponse wraps
+    // the Device message — code/api/openapi/udal/v1/device.openapi.v3.json)
+    // — a bare device object here would silently mask the unwrap being
+    // missing, exactly how this shipped broken the first time.
     const fetchImpl = vi.fn().mockResolvedValue(
       jsonResponse(200, {
-        id: "dev-1",
-        name: "Sensor",
-        capability: "temperature-sensor",
-        transport: "mqtt",
-        status: "DEVICE_STATUS_ONLINE",
-        lastSeen: "2026-08-01T00:00:00Z",
-        labels: { room: "kitchen" },
+        device: {
+          id: "dev-1",
+          name: "Sensor",
+          capability: "temperature-sensor",
+          transport: "mqtt",
+          status: "DEVICE_STATUS_ONLINE",
+          lastSeen: "2026-08-01T00:00:00Z",
+          labels: { room: "kitchen" },
+        },
       }),
     );
     const client = makeClient(fetchImpl);
