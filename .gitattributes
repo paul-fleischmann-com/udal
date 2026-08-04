@@ -1,0 +1,9 @@
+# examples/device-simulator/simulate.sh has a #!/bin/sh shebang — if git
+# checks it out with CRLF line endings (the default on Windows unless
+# core.autocrlf is set to "input"), the shebang becomes "#!/bin/sh\r" and
+# the container looks for an interpreter literally named "/bin/sh\r",
+# which doesn't exist (issue #30 PR review, reproduced on Windows/Podman:
+# "exec container process (missing dynamic library?) `/simulate.sh`: No
+# such file or directory" — a misleading error for what's actually a CRLF
+# shebang). Force LF regardless of the checking-out machine's git config.
+*.sh text eol=lf
