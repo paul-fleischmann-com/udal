@@ -14,11 +14,23 @@ and Mosquitto allows anonymous connections.
 
 == Prerequisites
 
-* Docker + Docker Compose v2 (`docker compose version`)
+* Docker (or Podman) + Compose v2 (`docker compose version` / `podman compose version`)
 * `curl`
 * Optional: https://github.com/fullstorydev/grpcurl[`grpcurl`], for the
   streaming `Subscribe` step (gRPC server-streaming has no REST mapping —
   see the note in step 5)
+
+TIP: On Windows, the `curl -d '{...}'` commands below (single-quoted,
+multi-line JSON, `\` line continuation) are bash syntax and won't work
+as-is in `cmd.exe` or PowerShell. link:verify-demo.ps1[`verify-demo.ps1`]
+runs the same steps — build, start, register, read, write, status check —
+using `Invoke-RestMethod` instead, with no shell-quoting to get wrong:
++
+[source,powershell]
+----
+cd examples
+.\verify-demo.ps1
+----
 
 == 1. Start the stack
 
