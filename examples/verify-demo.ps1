@@ -2,7 +2,7 @@
 .SYNOPSIS
   Builds, starts, and verifies the UDAL docker-compose demonstrator stack
   (issue #30) end-to-end: register the simulated device, read/write a
-  property, and confirm it reports online — the same steps as
+  property, and confirm it reports online - the same steps as
   examples/README.adoc, scripted and using Invoke-RestMethod instead of
   curl so there's no shell-quoting to get wrong on Windows.
 
@@ -81,10 +81,10 @@ try {
             -Headers $headers -ContentType "application/json" -Body $registerBody
         Write-Ok "registered: $($device | ConvertTo-Json -Compress)"
     } catch {
-        # A re-run against an already-registered device is fine — anything
+        # A re-run against an already-registered device is fine - anything
         # else (bad API key, gateway not actually up, ...) should still fail loudly.
         if ($_.Exception.Response -and $_.Exception.Response.StatusCode.value__ -eq 409) {
-            Write-Ok "device already registered from a previous run (409) — continuing"
+            Write-Ok "device already registered from a previous run (409) - continuing"
         } else {
             throw
         }
@@ -115,14 +115,14 @@ try {
     Write-Ok "sample_interval_s = $($writeResp.newValue.intVal)"
 
     Write-Step "Checking device status..."
-    # GetDevice's response is { "device": {...} } (v1GetDeviceResponse) — the
+    # GetDevice's response is { "device": {...} } (v1GetDeviceResponse) - the
     # device fields are nested under .device, not at the top level.
     $listed = Invoke-RestMethod -Uri "http://localhost:8080/v1/devices/$DeviceId" -Headers $headers
     $status = $listed.device.status
     if ($status -eq "DEVICE_STATUS_ONLINE") {
         Write-Ok "device status: $status"
     } else {
-        Write-Fail "device status: '$status' (expected DEVICE_STATUS_ONLINE — the heartbeat may not have landed yet; try again in a few seconds)"
+        Write-Fail "device status: '$status' (expected DEVICE_STATUS_ONLINE - the heartbeat may not have landed yet; try again in a few seconds)"
     }
 
     if (Get-Command grpcurl -ErrorAction SilentlyContinue) {
@@ -137,7 +137,7 @@ try {
         Remove-Job $job -ErrorAction SilentlyContinue
         if ($output) { Write-Ok "received a Subscribe event" } else { Write-Fail "no Subscribe event received in 6s" }
     } else {
-        Write-Step "grpcurl not found on PATH — skipping the Subscribe smoke test (optional; see examples/README.adoc step 5)"
+        Write-Step "grpcurl not found on PATH - skipping the Subscribe smoke test (optional; see examples/README.adoc step 5)"
     }
 
     Write-Host ""
