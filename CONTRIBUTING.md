@@ -10,6 +10,7 @@ Thank you for contributing! This guide covers everything you need to get started
 - [Commit Messages](#commit-messages)
 - [Pull Request Process](#pull-request-process)
 - [Component-Specific Guidelines](#component-specific-guidelines)
+- [Privacy / PII](#privacy--pii)
 - [Architecture Changes](#architecture-changes)
 
 ---
@@ -195,6 +196,16 @@ Breaking changes: append `!` after scope and add `BREAKING CHANGE:` in footer.
 - `make validate-openapi-v3` checks the v3 spec is structurally valid (`redocly.yaml`, minimal ruleset — the
   security/summary style rules are intentionally off since gateway-wide auth isn't documented per-operation yet)
 - Commit all regenerated files together with the `.proto` change
+
+---
+
+## Privacy / PII
+
+`Device.Labels` and property values are free-form and end up persisted in the device
+registry as-is (see `docs/privacy/gdpr-pii.adoc`) — before adding a new field to the
+`Device` model, a new default label, or anything else that could end up holding
+operator/end-user data, check that document and update it if what's persisted where
+changes.
 
 ---
 

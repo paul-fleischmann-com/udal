@@ -123,6 +123,14 @@ udal/
 | Web frontends, Node.js services
 |===
 
+== Privacy & Compliance
+
+Device `labels` and property values are free-form — UDAL itself never stores personal
+data, but an operator or device can put it there. See
+link:docs/privacy/gdpr-pii.adoc[docs/privacy/gdpr-pii.adoc] for what's persisted where,
+why device IDs are pseudonymous rather than anonymous, and what storing PII would mean
+for you as the data controller.
+
 == Status
 
 Pre-alpha. See link:https://github.com/paulefl/udal/milestones[Milestones] for roadmap.
