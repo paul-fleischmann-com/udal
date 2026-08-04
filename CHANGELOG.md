@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- GoReleaser configuration + CycloneDX SBOM generation (issue #32,
+  `.goreleaser.yaml`): `goreleaser release` (triggered by
+  `.github/workflows/release.yml` on `v*.*.*` tag pushes) now builds
+  `udal-gateway` for `linux/amd64` and `linux/arm64` from `code/gateway`
+  (a standalone module inside the `go.work` workspace), archives each as a
+  `.tar.gz`, and catalogues a CycloneDX-format SBOM per archive via `syft`
+  (its default output is SPDX, overridden explicitly to `cyclonedx-json`).
+  GitHub Release notes are generated from Conventional Commits
+  (CONTRIBUTING.md's `<type>(<scope>): <desc>` convention), grouped into
+  Features/Bug fixes/Performance/Documentation/Other with `chore`/`ci`/
+  `test`/`refactor` commits and merge commits excluded as internal
+  housekeeping. New "Release — GoReleaser snapshot dry-run" CI job runs
+  `goreleaser release --snapshot --clean` on every PR touching
+  `code/gateway/**`, `.goreleaser.yaml`, or other Go-path files, so a
+  config regression (e.g. a field GoReleaser no longer recognizes) fails
+  CI instead of only surfacing on the first real release tag; both this
+  job and the release workflow pin `goreleaser-action` to the same
+  GoReleaser version (`v2.17.1`) their config's field names were verified
+  against.
 - Docker Compose demonstrator stack + getting-started guide (issue #30,
   `deployments/docker/docker-compose.yml`): gateway + Mosquitto MQTT broker +
   a simulated MQTT `temperature-sensor` device (`examples/device-simulator`,

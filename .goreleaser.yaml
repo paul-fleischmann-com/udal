@@ -1,0 +1,90 @@
+version: 2
+
+project_name: udal-gateway
+
+# code/gateway is its own Go module inside the go.work workspace (see
+# go.work at repo root) -- `dir` below runs the build from inside it, and
+# go's workspace-mode module resolution finds go.work by searching parent
+# directories from there, the same way `make build` (cd code/gateway &&
+# go build ./...) already relies on.
+builds:
+  - id: udal-gateway
+    dir: code/gateway
+    main: ./cmd/gateway
+    binary: udal-gateway
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    # -s -w strips debug info/symbol table, matching deployments/docker/Dockerfile's
+    # existing `go build -ldflags="-s -w"` for the container image build.
+    ldflags:
+      - -s -w
+
+archives:
+  - id: udal-gateway
+    ids:
+      - udal-gateway
+    formats:
+      - tar.gz
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+
+checksum:
+  name_template: "checksums.txt"
+
+# CycloneDX SBOM per release artefact (issue #32 AC). syft's default output
+# format for goreleaser's sboms integration is SPDX JSON, not CycloneDX --
+# cmd/args below override it explicitly (verified against actual `syft`
+# output, not assumed from goreleaser's docs).
+sboms:
+  - id: udal-gateway-sbom
+    artifacts: archive
+    cmd: syft
+    args:
+      - "$artifact"
+      - "--output"
+      - "cyclonedx-json=$document"
+    documents:
+      - "${artifact}.cyclonedx.json"
+
+# Release notes generated from Conventional Commits (CONTRIBUTING.md's
+# `<type>(<scope>): <desc>` convention) rather than GoReleaser's raw git
+# shortlog. `chore`/`ci`/`test` commits and merge commits are internal
+# housekeeping, not user-facing -- excluded from the generated notes the
+# same way they're absent from CHANGELOG.md's own "Added"/"Fixed" sections.
+changelog:
+  sort: asc
+  abbrev: 9
+  groups:
+    - title: "Features"
+      regexp: '^.*?feat(\([[:word:]:,-]+\))??!?:.+$'
+      order: 0
+    - title: "Bug fixes"
+      regexp: '^.*?fix(\([[:word:]:,-]+\))??!?:.+$'
+      order: 1
+    - title: "Performance"
+      regexp: '^.*?perf(\([[:word:]:,-]+\))??!?:.+$'
+      order: 2
+    - title: "Documentation"
+      regexp: '^.*?docs(\([[:word:]:,-]+\))??!?:.+$'
+      order: 3
+    - title: Other
+      order: 999
+  filters:
+    exclude:
+      - "^chore"
+      - "^ci"
+      - "^test"
+      - "^refactor"
+      - "Merge pull request"
+      - "Merge branch"
+
+release:
+  # owner/name intentionally omitted -- inferred from the `origin` git
+  # remote (github.com/paul-fleischmann-com/udal), which doesn't match the
+  # `github.com/paulefl/udal` Go module path used throughout code/.
+  prerelease: auto

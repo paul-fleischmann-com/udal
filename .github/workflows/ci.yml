@@ -42,6 +42,7 @@ jobs:
               - 'go.work'
               - 'go.mod'
               - 'go.sum'
+              - '.goreleaser.yaml'
             rust:
               - 'code/sdk/rust/**'
               - '**/Cargo.toml'
@@ -150,6 +151,41 @@ jobs:
       - name: Run govulncheck (cli)
         run: govulncheck ./...
         working-directory: code/cli
+
+# ─── Go: Release dry-run (GoReleaser + CycloneDX SBOM, issue #32) ─────────────
+# `goreleaser release --clean` on a real tag push (.github/workflows/release.yml)
+# is the only thing that ever exercises .goreleaser.yaml -- untested until the
+# first actual release tag, at which point a config mistake blocks the release
+# itself. `--snapshot` runs the same build/archive/SBOM/changelog pipeline
+# without needing a tag or publishing anything, so this job catches config
+# breakage (e.g. a builds/archives field GoReleaser no longer recognizes) on
+# every relevant PR instead.
+  release-dry-run:
+    name: Release — GoReleaser snapshot dry-run
+    needs: changes
+    if: needs.changes.outputs.go == 'true' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # GoReleaser reads full tag/commit history for the changelog pipe
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "stable"
+          cache: true
+
+      - name: Install syft (CycloneDX SBOM generation)
+        run: curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
+
+      - name: GoReleaser snapshot dry-run
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          # Pinned to the same version as release.yml -- see that file's
+          # comment on why "latest" isn't used.
+          version: "v2.17.1"
+          args: release --snapshot --clean
 
 # ─── Go: Integration Tests (MQTT via Docker) ──────────────────────────────────
   go-integration:
@@ -596,6 +632,7 @@ jobs:
       - go-build-test
       - go-lint
       - go-security
+      - release-dry-run
       - go-integration
       - go-integration-can
       - rust-ci

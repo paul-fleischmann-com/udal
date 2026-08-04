@@ -18,13 +18,20 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.22"
+          go-version: "stable"
+
+      - name: Install syft (CycloneDX SBOM generation, issue #32)
+        run: curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
 
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser
-          version: latest
+          # Pinned, not "latest" -- .goreleaser.yaml's field names
+          # (archives.formats/.ids) were verified against this exact
+          # version; older/newer GoReleaser releases have used different
+          # field names for the same settings (see .goreleaser.yaml).
+          version: "v2.17.1"
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
