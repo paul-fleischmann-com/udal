@@ -1,0 +1,130 @@
+= GDPR / PII Handling for Device Properties and Labels
+:date: 2026-08-04
+
+Operator-facing guidance for req42.adoc's RC-01 ("GDPR: UDAL must not store personally
+identifiable information in device properties unless explicitly configured. Device IDs
+are considered pseudonymous identifiers."). Written for whoever runs a UDAL gateway
+deployment, not for UDAL's own developers — it describes what the *gateway software*
+does and doesn't do with the data operators choose to put into it, not a legal opinion.
+If your deployment might process EU/EEA personal data, get that reviewed by whoever
+handles data-protection compliance for your organisation; this document only covers the
+technical facts needed to make that assessment.
+
+== What UDAL actually stores, and where
+
+UDAL has no field, column, or property that is *for* personal data — every value an
+operator or device puts into a device's `labels` map or into a property is free-form and
+stored exactly as given. Whether that ends up being personal data under GDPR depends
+entirely on what an operator chooses to put there, not on anything UDAL does. Concretely:
+
+|===
+| Data | Persisted? | Where
+
+| Device `id`, `name`, `capability`, `transport`, `status`, `last_seen`, `labels`
+| Yes, until `DeleteDevice` is called (`code/gateway/internal/registry`)
+| The device registry — an embedded, on-disk `bbolt` file (`UDAL_REGISTRY_PATH`, default
+  `./udal-registry.db`). *Not encrypted at rest by UDAL* — anyone with filesystem access
+  to that file can read every device record in it.
+
+| Property values (`GetProperty`/`SetProperty`/telemetry pushed by a device)
+| No
+| Held only in an in-process map (`api.MemoryPropertyStore`) for as long as the gateway
+  process is running. A restart discards it; nothing about a property's *value* is ever
+  written to disk by the gateway itself.
+
+| API-Key/JWT auth subjects (`UDAL_BOOTSTRAP_API_KEY`, `auth.APIKeyStore`)
+| Yes
+| Also in the registry's `bbolt` file, in a separate bucket. These identify *operators/
+  applications* calling the API, not devices — a related but separate PII surface from
+  device properties/labels, out of this document's scope (RC-01 is specifically about
+  device properties).
+
+| Request logs (`internal/logging`)
+| Depends on your log sink
+| Each request logs `method`, gRPC status `code`, `duration_ms`, and `trace_id` —
+  deliberately *not* the request payload, so property values and label contents don't
+  end up in logs by default. `grpc-gateway`/HTTP access logs from anything you put in
+  front of the gateway (a reverse proxy, load balancer) are outside UDAL's control.
+|===
+
+== Device IDs are pseudonymous identifiers, not anonymous ones
+
+A device `id` (a UUID assigned at `RegisterDevice` time, or a caller-supplied string) is
+a *pseudonymous* identifier: on its own it identifies a device, not a person, and UDAL
+attaches no name, account, or contact information to it by default. That is a weaker
+guarantee than "anonymous," though, and GDPR treats pseudonymous data as personal data
+whenever it *can* be linked back to a natural person — which is a property of what an
+operator does around UDAL, not of UDAL itself:
+
+* A `labels` value such as `{"owner": "jane.doe@example.com"}` or `{"install_address":
+  "12 Main St, Apt 4"}` re-identifies the device (and, transitively, every property
+  reading recorded against it) the moment it's added.
+* A property value can be identifying on its own even without a label — e.g. a precise
+  GPS-coordinate property on a device that's known to be carried by one specific person,
+  or a video/image property from a camera.
+* Combining a device ID with an *external* mapping you keep elsewhere (a spreadsheet of
+  "device ID → customer") re-identifies every record for that device retroactively, for
+  as long as that mapping exists.
+
+None of this requires any UDAL configuration change to happen — it's simply a consequence
+of what gets written into a `labels` map or a property value, by an operator or by a
+device's own firmware.
+
+== What may and may not go into properties/labels
+
+*Should not*, absent a deliberate, documented decision (see below): names, email
+addresses, phone numbers, physical/postal addresses, precise personal geolocation,
+government ID numbers, biometric or health data, or any other directly- or
+indirectly-identifying data about a specific natural person.
+
+*Fine by default*: device/asset identifiers you control (serial numbers, internal asset
+tags), technical telemetry (temperature, battery level, signal strength), device-centric
+labels (`site`, `zone`, `firmware_version`, `install_date`), and operational metadata
+that doesn't trace back to an identifiable person.
+
+The line isn't always obvious — `"site": "hq"` is fine; `"site": "the guest bedroom at
+14 Elm Street"` describes a private residence and likely isn't. When in doubt, ask
+whether the value, alone or combined with anything else you hold, could identify a
+specific natural person.
+
+== If PII is ever required: how to configure it, and the risk you take on
+
+UDAL has no dedicated "PII field," feature flag, or opt-in switch — there is nothing to
+turn on. "Explicitly configured" (req42.adoc RC-01) means an operator's own deliberate
+choice to put personal data into a `labels` value or a property, e.g. `SetProperty`ing a
+`registered_owner` property because a specific deployment's use case genuinely requires
+per-person attribution. Making that choice hands you, the operator, the associated GDPR
+data-controller obligations for that data — UDAL does not do any of the following for
+you:
+
+* *Encryption at rest*: the registry's `bbolt` file is plaintext on disk. Encrypt the
+  volume/filesystem it lives on if it will contain personal data.
+* *Retention limits*: UDAL keeps a device record until you call `DeleteDevice` —
+  indefinitely otherwise. If personal data has a retention limit, you need your own
+  process (manual or scripted, via the API) to delete devices once it's expired.
+* *Right to erasure*: `DeleteDevice` removes a device's registry record (id, name,
+  labels, ACL) entirely, and its cached property values are gone the moment the gateway
+  process is next restarted (they were never on disk). There is currently no single call
+  that also purges a device's history from anywhere you've forwarded property updates or
+  logs to (metrics/tracing backends, log aggregators) — track those separately if they
+  might have captured personal data.
+* *Access control*: UDAL's existing auth (API-Key/mTLS/OAuth2, RBAC + per-device ACL)
+  restricts who can call the API at all, but does not distinguish "this label is
+  personal data" from any other label — anyone authorised to `GetDevice`/`ListDevices`
+  sees every label and property value a device has, personal or not.
+* *Lawful basis, consent, DPIA*: entirely your responsibility as the data controller;
+  UDAL has no concept of consent or a lawful-basis record.
+
+If you don't need per-person attribution, the simplest way to stay out of GDPR's scope
+for device data entirely is to not put personal data into labels or properties in the
+first place — use an opaque device ID and, if you need to map a device to a person, keep
+that mapping in a system designed for it, with its own access controls and retention
+policy, rather than inside UDAL.
+
+== See also
+
+* link:../req42/req42.adoc[req42.adoc] — RC-01 is listed under "6.3 Regulatory /
+  Compliance Constraints".
+* link:../../README.adoc[README.adoc] — repository overview.
+* link:../../CONTRIBUTING.md[CONTRIBUTING.md] — for anyone extending the registry/label
+  model: keep this document in sync with what's actually persisted where.
