@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- TypeScript/Node.js client SDK (req42.adoc §7.3, `code/sdk/typescript`): application-side
+  only (`UdalClient`) — no device-side registration, matching the browser/Node.js use
+  cases this SDK targets. `readProperty`/`writeProperty`/`sendCommand` (and
+  `getDevice`/`listDevices`, mirroring the Python SDK's issue #19 addition) call the
+  gateway's existing REST/`grpc-gateway` transcoding (`code/api/proto/udal/v1/device.proto`)
+  through a dependency-free, `fetch`-based HTTP client, isomorphic between Node (>=20) and
+  browsers — unlike the other three SDKs, which dial the gateway's gRPC port directly.
+  Every failing operation rejects its returned `Promise` with a `UdalError` (`{code,
+  message}`, mirroring Go's `*udal.Error`/Python's `UdalError`/Rust's `UdalError`, including
+  the shared `"udal: CODE: message"` format), mapped from the gateway's `google.rpc.Status`
+  JSON error body. `subscribe()` is genuinely typed as an `AsyncIterable<PropertyUpdate>`,
+  but its first iteration immediately rejects with an `Unimplemented`-coded `UdalError` —
+  real streaming needs a WebSocket bridge (req42.adoc §7.1) that doesn't exist yet, and the
+  gateway's `Subscribe`/`StreamCommands` RPCs have no REST transcoding (`grpc-gateway` v2
+  doesn't support a streaming REST mapping), so this can't be a thin REST wrapper like the
+  other operations. Ships as a dual ESM/CJS build (via `tsup`) with bundled `.d.ts` types and
+  zero runtime dependencies, keeping the `npm audit` surface minimal. `npm run
+  lint`/`typecheck`/`test` and `npm audit --audit-level=high` all pass. (#35)
 - Rust client SDK (req42.adoc §7.3, QR-08, `code/sdk/rust`): two independent builds
   behind Cargo features. `std` (default) is the full application- (`Client`) and
   device-side (`Device`) SDK over gRPC via `tonic`/`prost`, mirroring the Go and
