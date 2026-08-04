@@ -8,6 +8,16 @@ image:https://img.shields.io/badge/license-Apache%202.0-blue[]
 UDAL provides a unified API surface for interacting with heterogeneous IoT devices regardless of their underlying transport protocol.
 Applications talk to one consistent gRPC/REST interface; UDAL routes requests to the correct transport adapter.
 
+== Getting Started
+
+[source,shell]
+----
+cd deployments/docker
+docker compose up --build
+----
+
+Brings up the gateway, a Mosquitto MQTT broker, and a simulated MQTT device — see link:examples/README.adoc[examples/README.adoc] for the full walkthrough (register the device, read/write a property, subscribe to live updates, view it in the link:dashboard/[Reflex dashboard]).
+
 == Architecture
 
 The system is documented as code using link:https://github.com/docToolchain/Bausteinsicht[Bausteinsicht].

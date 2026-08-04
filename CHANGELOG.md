@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Docker Compose demonstrator stack + getting-started guide (issue #30,
+  `deployments/docker/docker-compose.yml`): gateway + Mosquitto MQTT broker +
+  a simulated MQTT `temperature-sensor` device (`examples/device-simulator`,
+  a minimal `mosquitto_pub` loop publishing `temperature`/`humidity`/
+  `battery_level` for device `sim-temp-1`, matching the gateway MQTT
+  adapter's wire format and the `temperature-sensor` capability schema).
+  `UDAL_DEV_INSECURE`/`UDAL_BOOTSTRAP_API_KEY` seed a working, TLS-free demo
+  gateway with zero manual setup. `examples/README.adoc` walks through the
+  full loop against the running stack — register the device, read/write a
+  property (`sample_interval_s`, the one writable property on this schema),
+  subscribe to live updates via `grpcurl` (`Subscribe` has no REST mapping —
+  grpc-gateway v2 doesn't support streaming transcoding), and view it live
+  in the Reflex dashboard (#19). Referenced from the root `README.adoc`'s
+  new "Getting Started" section. Not a production deployment — see the
+  file-level comments in `docker-compose.yml` for what's demo-only.
 - TypeScript/Node.js client SDK (req42.adoc §7.3, `code/sdk/typescript`): application-side
   only (`UdalClient`) — no device-side registration, matching the browser/Node.js use
   cases this SDK targets. `readProperty`/`writeProperty`/`sendCommand` (and

@@ -1,0 +1,144 @@
+= UDAL Demonstrator Walkthrough
+:toc:
+:toc-placement: left
+
+From `git clone` to live device data in a few commands, using the
+link:../deployments/docker/docker-compose.yml[docker-compose.yml] stack
+(issue #30): the gateway, a Mosquitto MQTT broker, and a
+link:device-simulator/[simulated temperature-sensor device] that publishes
+fake telemetry every few seconds.
+
+NOTE: This stack is a local demonstrator, not a production deployment —
+TLS is disabled (`UDAL_DEV_INSECURE`), the API key is a fixed demo value,
+and Mosquitto allows anonymous connections.
+
+== Prerequisites
+
+* Docker + Docker Compose v2 (`docker compose version`)
+* `curl`
+* Optional: https://github.com/fullstorydev/grpcurl[`grpcurl`], for the
+  streaming `Subscribe` step (gRPC server-streaming has no REST mapping —
+  see the note in step 5)
+
+== 1. Start the stack
+
+[source,shell]
+----
+cd deployments/docker
+docker compose up --build
+----
+
+This builds and starts three containers:
+
+* `gateway` — REST on `localhost:8080`, gRPC on `localhost:50051`, health/metrics on `localhost:9090`
+* `mosquitto` — MQTT broker on `localhost:1883`
+* `device-simulator` — publishes `temperature`/`humidity`/`battery_level` for a device
+  called `sim-temp-1`, matching the
+  link:../schema/examples/temperature-sensor.json[`temperature-sensor`] capability schema
+
+Wait for the gateway to report ready (usually a few seconds):
+
+[source,shell]
+----
+until curl -sf http://localhost:9090/health | grep -q '"status":"ok"'; do sleep 1; done
+echo "gateway ready"
+----
+
+The simulator is already publishing to the broker at this point, but the
+gateway won't know about `sim-temp-1` — and its properties won't resolve
+to anything meaningful — until it's registered in step 2.
+
+== 2. Register the simulated device
+
+[source,shell]
+----
+curl -s -X POST http://localhost:8080/v1/devices \
+  -H "X-API-Key: demo-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+        "id": "sim-temp-1",
+        "name": "Simulated Temperature Sensor",
+        "capability": "temperature-sensor",
+        "transport": "mqtt"
+      }'
+----
+
+`demo-api-key` is the raw key seeded by the compose file's
+`UDAL_BOOTSTRAP_API_KEY=demo:admin:demo-api-key` (`subject:role:rawkey`) —
+see `code/gateway/internal/auth/apikey.go`.
+
+== 3. Read a property
+
+[source,shell]
+----
+curl -s -H "X-API-Key: demo-api-key" \
+  http://localhost:8080/v1/devices/sim-temp-1/properties/temperature
+----
+
+Run it again a few seconds later — the value changes as the simulator
+publishes new readings. `humidity` and `battery_level` work the same way.
+
+== 4. Write a property
+
+`temperature`/`humidity`/`battery_level` are `readOnly` in the capability
+schema (they're sensor readings). `sample_interval_s` is a writable
+config property, so it's the one to demonstrate `SetProperty` against:
+
+[source,shell]
+----
+curl -s -X PUT http://localhost:8080/v1/devices/sim-temp-1/properties/sample_interval_s \
+  -H "X-API-Key: demo-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{"intVal": "10"}'
+----
+
+(The simulator itself ignores this — it always publishes every
+`INTERVAL_SECONDS`, see `docker-compose.yml` — but the write against the
+gateway's property store succeeds and `GetProperty` will reflect it.)
+
+== 5. Subscribe to updates
+
+`Subscribe` is a gRPC server-streaming RPC with no REST/`grpc-gateway`
+mapping (streaming isn't supported by grpc-gateway v2's REST transcoding),
+so this step needs `grpcurl` instead of `curl`. The gateway has gRPC
+reflection enabled, so no `.proto` file is needed:
+
+[source,shell]
+----
+grpcurl -plaintext \
+  -H "x-api-key: demo-api-key" \
+  -d '{"deviceId": "sim-temp-1"}' \
+  localhost:50051 udal.v1.DeviceService/Subscribe
+----
+
+You should see a new JSON event stream out every few seconds as the
+simulator publishes. Ctrl-C to stop.
+
+Any of the Go/Python/Rust SDKs' `subscribe()` works the same way, if you'd
+rather see it from application code than a raw RPC call.
+
+== 6. View it in the Reflex dashboard
+
+The link:../dashboard/[dashboard] (issue #19) isn't part of the compose
+stack (no Dockerfile for it yet), but it runs directly against this same
+gateway:
+
+[source,shell]
+----
+cd dashboard
+pip install -e ../code/sdk/python && pip install -e ".[dev]"
+UDAL_GATEWAY_URL=localhost:50051 UDAL_API_KEY=demo-api-key reflex run
+----
+
+Open http://localhost:3000 — `sim-temp-1` shows up in the device list
+(online, since the simulator is actively publishing), and its property
+browser / live telemetry view updates in real time from the same
+`Subscribe` stream used in step 5.
+
+== 7. Tear down
+
+[source,shell]
+----
+cd deployments/docker
+docker compose down
+----
