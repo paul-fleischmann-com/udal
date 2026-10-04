@@ -126,20 +126,9 @@ See link:../req42/req42.adoc[req42 Requirements Document] for the full requireme
 
 === 3.1 Business Context
 
-[source]
-----
-┌──────────────────┐        ┌───────────────────────────────────────────────┐
-│  Client Apps     │        │                  UDAL                         │
-│  (backend svcs,  │◄──────►│  Unified device API — protocol-transparent    │
-│   dashboards)    │        └───────────────────────────────────────────────┘
-└──────────────────┘             ▲              ▲              ▲
-                                 │              │              │
-                          MQTT Broker      HTTP Devices    CAN Bus
-                                 │              │              │
-                          ┌──────┴──────────────┴──────────────┴──────┐
-                          │              IoT Devices                   │
-                          └─────────────────────────────────────────────┘
-----
+image::arch-context.png[System Context,width=100%]
+
+include::generated/context.adoc[]
 
 UDAL hides the protocol heterogeneity from client applications. Clients see one unified API regardless of how devices are physically connected.
 
@@ -221,9 +210,7 @@ The system consists of three top-level elements:
 * **UDAL SDKs** — client and device libraries (Go, Rust, Python, TypeScript, Reflex), plus the operator CLI (`udal`)
 * **External Systems** — MQTT Broker, CAN Bus (operated outside UDAL)
 
-image::arch-context.png[System Context,width=100%]
-
-include::generated/context.adoc[]
+See §3.1 for the system context diagram.
 
 === 5.2 Level 2 — UDAL Gateway
 
