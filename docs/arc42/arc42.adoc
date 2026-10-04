@@ -128,7 +128,7 @@ See link:../req42/req42.adoc[req42 Requirements Document] for the full requireme
 
 image::arch-context.png[System Context,width=100%]
 
-include::generated/context.adoc[]
+include::generated/context.adoc[opts=optional]
 
 UDAL hides the protocol heterogeneity from client applications. Clients see one unified API regardless of how devices are physically connected.
 
@@ -261,7 +261,7 @@ See §3.1 for the system context diagram.
 
 image::arch-gateway_internal.png[Gateway Internal Structure,width=100%]
 
-include::generated/gateway_internal.adoc[]
+include::generated/gateway_internal.adoc[opts=optional]
 
 === 5.3 Level 2 — SDK Overview
 
@@ -296,11 +296,11 @@ include::generated/gateway_internal.adoc[]
 
 image::arch-sdks.png[SDK Overview,width=100%]
 
-include::generated/sdks.adoc[]
+include::generated/sdks.adoc[opts=optional]
 
 image::arch-adapters.png[Adapter Layer,width=100%]
 
-include::generated/adapters.adoc[]
+include::generated/adapters.adoc[opts=optional]
 
 // ─────────────────────────────────────────────────────────────────────────────
 == 6. Runtime View
