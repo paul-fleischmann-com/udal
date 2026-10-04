@@ -32,7 +32,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # ── 1. Install bausteinsicht (already used in CI for validation) ───────────
+      # ── 1. bausteinsicht ──────────────────────────────────────────────────────
       - uses: actions/setup-go@v5
         with:
           go-version: "stable"
@@ -41,7 +41,44 @@ jobs:
       - name: Install bausteinsicht
         run: go install github.com/docToolchain/Bausteinsicht/cmd/bausteinsicht@latest
 
-      # ── 2. Convert Mermaid sources to PNG via mermaid-cli ─────────────────────
+      # ── 2. draw.io CLI (for static view export with auto-layout) ──────────────
+      - name: Install draw.io AppImage
+        run: |
+          sudo apt-get install -y --no-install-recommends \
+            xvfb libgbm1 libnspr4 libnss3 libasound2 \
+            libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 \
+            libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2
+          wget -q -O /tmp/drawio.AppImage \
+            "https://github.com/jgraph/drawio-desktop/releases/download/v26.0.4/drawio-x86_64-26.0.4.AppImage"
+          chmod +x /tmp/drawio.AppImage
+          cd /tmp && ./drawio.AppImage --appimage-extract > /dev/null
+          echo "BAUSTEINSICHT_DRAWIO_PATH=/tmp/squashfs-root/drawio" >> "$GITHUB_ENV"
+
+      # ── 3. Static views: sync → auto-layout → export via draw.io ─────────────
+      # bausteinsicht sync writes architecture.drawio next to the model file.
+      # --relayout applies hierarchical auto-layout, resetting any manual positions.
+      # export produces architecture-<view-key>.png for every view.
+      - name: Generate static view diagrams
+        run: |
+          mkdir -p docs/images
+
+          bausteinsicht sync --model architecture.jsonc --relayout
+
+          xvfb-run --auto-servernum \
+            bausteinsicht export \
+              --model architecture.jsonc \
+              --image-format png \
+              --scale 2 \
+              --output docs/images/
+
+          # Rename architecture-<view>.png → arch-<view>.png
+          for png in docs/images/architecture-*.png; do
+            [ -f "$png" ] || continue
+            view="${png##*/architecture-}"
+            mv "$png" "docs/images/arch-${view}"
+          done
+
+      # ── 4. Sequence diagrams: bausteinsicht export-sequence → mmdc → PNG ──────
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
@@ -55,54 +92,29 @@ jobs:
           {"args": ["--no-sandbox", "--disable-setuid-sandbox"]}
           EOF
 
-      # ── 3. Generate all architecture diagrams ────────────────────────────────
-      # bausteinsicht discovers every view from the model itself (--view
-      # defaults to "all"), so no hardcoded lists are needed here.
-      # Adding a new view to architecture.jsonc is enough.
-      - name: Generate architecture diagrams
+      - name: Generate sequence diagrams
         run: |
-          mkdir -p docs/images
-
-          # Export all static views and all sequence diagrams as Mermaid source
-          bausteinsicht export-diagram \
-            --model architecture.jsonc \
-            --diagram-format mermaid \
-            --output docs/images/
-
+          # export-sequence writes sequence-<view>.md; mmdc requires .mmd extension
           bausteinsicht export-sequence \
             --model architecture.jsonc \
             --diagram-format mermaid \
             --output docs/images/
 
-          # Convert every exported file → PNG with arch- prefix.
-          # export-diagram writes <view>.mmd; export-sequence writes sequence-<view>.md.
-          # mmdc only processes .mmd — rename .md files before passing them in.
-          for f in docs/images/*.mmd docs/images/*.md; do
+          for f in docs/images/sequence-*.md; do
             [ -f "$f" ] || continue
-            base=$(basename "$f")
-            view="${base#sequence-}"   # strip sequence- prefix (no-op for static views)
-            view="${view%.*}"          # strip .mmd / .md extension
-
-            # ensure mmdc sees a .mmd extension
-            input="$f"
-            if [[ "$f" == *.md ]]; then
-              input="docs/images/${view}.mmd"
-              mv "$f" "$input"
-            fi
-
+            view="$(basename "$f" .md)"
+            view="${view#sequence-}"
+            mv "$f" "docs/images/${view}.mmd"
             mmdc \
-              --input  "$input" \
+              --input  "docs/images/${view}.mmd" \
               --output "docs/images/arch-${view}.png" \
               --puppeteerConfigFile /tmp/puppeteer.json \
               --theme neutral \
               --width 1400
-            rm "$input"
+            rm "docs/images/${view}.mmd"
           done
 
-      # ── 4. Generate element tables for static views ──────────────────────────
-      # export-table produces one AsciiDoc table per view; arc42.adoc
-      # includes them via include::generated/<view>.adoc[].
-      # Sequence/dynamic views are skipped — tables add no value there.
+      # ── 5. Element tables (combined AsciiDoc, included in §5.4) ──────────────
       - name: Generate element tables
         run: |
           mkdir -p docs/arc42/generated
@@ -111,7 +123,7 @@ jobs:
             --table-format adoc \
             --output docs/arc42/generated/
 
-      # ── 5. Build PDF ──────────────────────────────────────────────────────────
+      # ── 6. Build PDF ──────────────────────────────────────────────────────────
       - name: Install Asciidoctor PDF
         run: sudo gem install asciidoctor-pdf --no-document
 
@@ -129,7 +141,7 @@ jobs:
           path: dist/docs/udal-arc42.pdf
           retention-days: 30
 
-      # ── 5. Attach to GitHub Release on version tags ───────────────────────────
+      # ── 7. Attach to GitHub Release on version tags ───────────────────────────
       - name: Attach PDF to GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
