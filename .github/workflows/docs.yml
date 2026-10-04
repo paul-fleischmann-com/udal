@@ -55,40 +55,35 @@ jobs:
           {"args": ["--no-sandbox", "--disable-setuid-sandbox"]}
           EOF
 
-      # ── 3. Generate architecture diagrams ─────────────────────────────────────
-      - name: Export static view diagrams
+      # ── 3. Generate all architecture diagrams ────────────────────────────────
+      # bausteinsicht discovers every view from the model itself (--view
+      # defaults to "all"), so no hardcoded lists are needed here.
+      # Adding a new view to architecture.jsonc is enough.
+      - name: Generate architecture diagrams
         run: |
           mkdir -p docs/images
-          for view in context gateway_internal sdks adapters; do
-            bausteinsicht export-diagram \
-              --model architecture.jsonc \
-              --view "$view" \
-              --diagram-format mermaid > "docs/images/arch-${view}.mmd"
-            mmdc \
-              --input  "docs/images/arch-${view}.mmd" \
-              --output "docs/images/arch-${view}.png" \
-              --puppeteerConfigFile /tmp/puppeteer.json \
-              --theme neutral \
-              --width 1400
-            rm "docs/images/arch-${view}.mmd"
-          done
 
-      - name: Export sequence diagrams
-        run: |
-          for view in property-read device-registration telemetry-publish \
-                      http-property-read http-webhook-push \
-                      can-property-read can-property-write; do
-            bausteinsicht export-sequence \
-              --model architecture.jsonc \
-              --view "$view" \
-              --diagram-format mermaid > "docs/images/arch-${view}.mmd"
+          # Export all static views and all sequence diagrams as Mermaid source
+          bausteinsicht export-diagram \
+            --model architecture.jsonc \
+            --diagram-format mermaid \
+            --output docs/images/
+
+          bausteinsicht export-sequence \
+            --model architecture.jsonc \
+            --diagram-format mermaid \
+            --output docs/images/
+
+          # Convert every .mmd → PNG and add the arch- prefix
+          for mmd in docs/images/*.mmd; do
+            view=$(basename "$mmd" .mmd)
             mmdc \
-              --input  "docs/images/arch-${view}.mmd" \
+              --input  "$mmd" \
               --output "docs/images/arch-${view}.png" \
               --puppeteerConfigFile /tmp/puppeteer.json \
               --theme neutral \
               --width 1400
-            rm "docs/images/arch-${view}.mmd"
+            rm "$mmd"
           done
 
       # ── 4. Build PDF ──────────────────────────────────────────────────────────
