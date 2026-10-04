@@ -76,18 +76,27 @@ jobs:
 
           # Convert every exported file → PNG with arch- prefix.
           # export-diagram writes <view>.mmd; export-sequence writes sequence-<view>.md.
+          # mmdc only processes .mmd — rename .md files before passing them in.
           for f in docs/images/*.mmd docs/images/*.md; do
             [ -f "$f" ] || continue
             base=$(basename "$f")
             view="${base#sequence-}"   # strip sequence- prefix (no-op for static views)
-            view="${view%.*}"          # strip extension (.mmd or .md)
+            view="${view%.*}"          # strip .mmd / .md extension
+
+            # ensure mmdc sees a .mmd extension
+            input="$f"
+            if [[ "$f" == *.md ]]; then
+              input="docs/images/${view}.mmd"
+              mv "$f" "$input"
+            fi
+
             mmdc \
-              --input  "$f" \
+              --input  "$input" \
               --output "docs/images/arch-${view}.png" \
               --puppeteerConfigFile /tmp/puppeteer.json \
               --theme neutral \
               --width 1400
-            rm "$f"
+            rm "$input"
           done
 
       # ── 4. Generate element tables for static views ──────────────────────────
