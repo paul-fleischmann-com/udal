@@ -74,16 +74,20 @@ jobs:
             --diagram-format mermaid \
             --output docs/images/
 
-          # Convert every .mmd → PNG and add the arch- prefix
-          for mmd in docs/images/*.mmd; do
-            view=$(basename "$mmd" .mmd)
+          # Convert every exported file → PNG with arch- prefix.
+          # export-diagram writes <view>.mmd; export-sequence writes sequence-<view>.md.
+          for f in docs/images/*.mmd docs/images/*.md; do
+            [ -f "$f" ] || continue
+            base=$(basename "$f")
+            view="${base#sequence-}"   # strip sequence- prefix (no-op for static views)
+            view="${view%.*}"          # strip extension (.mmd or .md)
             mmdc \
-              --input  "$mmd" \
+              --input  "$f" \
               --output "docs/images/arch-${view}.png" \
               --puppeteerConfigFile /tmp/puppeteer.json \
               --theme neutral \
               --width 1400
-            rm "$mmd"
+            rm "$f"
           done
 
       # ── 4. Generate element tables for static views ──────────────────────────
