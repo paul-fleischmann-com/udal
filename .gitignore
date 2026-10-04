@@ -35,3 +35,7 @@ udal-capability.db
 *.pem
 *.key
 *.crt
+
+# Generated build artefacts (docs workflow)
+docs/arc42/generated/
+docs/images/arch-*.png

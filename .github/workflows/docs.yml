@@ -86,7 +86,19 @@ jobs:
             rm "$mmd"
           done
 
-      # ── 4. Build PDF ──────────────────────────────────────────────────────────
+      # ── 4. Generate element tables for static views ──────────────────────────
+      # export-table produces one AsciiDoc table per view; arc42.adoc
+      # includes them via include::generated/<view>.adoc[].
+      # Sequence/dynamic views are skipped — tables add no value there.
+      - name: Generate element tables
+        run: |
+          mkdir -p docs/arc42/generated
+          bausteinsicht export-table \
+            --model architecture.jsonc \
+            --table-format adoc \
+            --output docs/arc42/generated/
+
+      # ── 5. Build PDF ──────────────────────────────────────────────────────────
       - name: Install Asciidoctor PDF
         run: sudo gem install asciidoctor-pdf --no-document
 
