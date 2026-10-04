@@ -2,7 +2,6 @@
 :doctype: article
 :toc:
 :toc-placement: left
-:sectnums:
 :version: 0.1.0-draft
 :date: 2026-04-28
 ifndef::imagesdir[:imagesdir: ../images]
