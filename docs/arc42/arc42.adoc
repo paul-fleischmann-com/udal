@@ -501,7 +501,7 @@ volumes:
   §8.2's per-request `trace_id` working when tracing export is "disabled").
   Only when `UDAL_OTEL_ENDPOINT` is non-empty is an OTLP/gRPC exporter
   (`otlptracegrpc`) attached via `WithBatcher`; a bare `host:port` value
-  dials plaintext, a full URL (`https://...`) dials TLS. Span tree per
+  dials plaintext, a full URL (`+https://...+`) dials TLS. Span tree per
   request: `api` (`tracing.Interceptor`, first in the gRPC interceptor
   chain) → `auth` (`auth.Authenticator`) as a sibling child, and → `router`
   (`DeviceService.GetProperty`/`SetProperty`) → `adapter` (mqtt/http/can
