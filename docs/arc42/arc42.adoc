@@ -221,7 +221,7 @@ The system consists of three top-level elements:
 * **UDAL SDKs** — client and device libraries (Go, Rust, Python, TypeScript, Reflex), plus the operator CLI (`udal`)
 * **External Systems** — MQTT Broker, CAN Bus (operated outside UDAL)
 
-See `architecture.jsonc` view `context` for the diagram.
+image::arch-context.png[System Context,width=100%]
 
 === 5.2 Level 2 — UDAL Gateway
 
@@ -270,7 +270,7 @@ See `architecture.jsonc` view `context` for the diagram.
 | Heartbeat tracking; online/offline events; /health + /metrics endpoints
 |===
 
-See `architecture.jsonc` view `gateway_internal` for the diagram.
+image::arch-gateway_internal.png[Gateway Internal Structure,width=100%]
 
 === 5.3 Level 2 — SDK Overview
 
@@ -303,12 +303,16 @@ See `architecture.jsonc` view `gateway_internal` for the diagram.
 | Operator command-line tool: `schema publish/get/list` against CapabilityService (F-13, issue #23)
 |===
 
+image::arch-sdks.png[SDK Overview,width=100%]
+
+image::arch-adapters.png[Adapter Layer,width=100%]
+
 // ─────────────────────────────────────────────────────────────────────────────
 == 6. Runtime View
 
 === 6.1 Property Read
 
-See `architecture.jsonc` dynamic view `property-read` for the sequence diagram.
+image::arch-property-read.png[Property Read Sequence,width=100%]
 
 . Client calls `GetProperty(deviceId, "temperature")` via gRPC
 . Auth middleware validates credential and RBAC role
@@ -320,7 +324,7 @@ See `architecture.jsonc` dynamic view `property-read` for the sequence diagram.
 
 === 6.2 Device Registration
 
-See `architecture.jsonc` dynamic view `device-registration` for the sequence diagram.
+image::arch-device-registration.png[Device Registration Sequence,width=100%]
 
 . Device calls `Run(ctx)` in the Go SDK
 . SDK calls `RegisterDevice(id, schema)` via gRPC with mTLS certificate
@@ -331,7 +335,7 @@ See `architecture.jsonc` dynamic view `device-registration` for the sequence dia
 
 === 6.3 Telemetry Publish (Async)
 
-See `architecture.jsonc` dynamic view `telemetry-publish` for the sequence diagram.
+image::arch-telemetry-publish.png[Telemetry Publish Sequence,width=100%]
 
 . Device publishes to MQTT topic `udal/{id}/props/temperature`
 . MQTT Adapter receives event; forwards `PropertyEvent` to Router
@@ -341,8 +345,9 @@ See `architecture.jsonc` dynamic view `telemetry-publish` for the sequence diagr
 
 === 6.4 HTTP Property Read (F-10, issue #24)
 
-See `architecture.jsonc` dynamic view `http-property-read` for the sequence
-diagram. Same shape as §6.1, except step 4 onward: the HTTP Adapter has no
+image::arch-http-property-read.png[HTTP Property Read Sequence,width=100%]
+
+Same shape as §6.1, except step 4 onward: the HTTP Adapter has no
 persistent connection or broker to reuse, so every `ReadProperty` is a
 synchronous round trip against the device itself.
 
@@ -356,8 +361,9 @@ synchronous round trip against the device itself.
 
 === 6.5 HTTP Webhook Push (F-10, issue #24)
 
-See `architecture.jsonc` dynamic view `http-webhook-push` for the sequence
-diagram. Complements §6.4: a device can push a value ahead of the HTTP
+image::arch-http-webhook-push.png[HTTP Webhook Push Sequence,width=100%]
+
+Complements §6.4: a device can push a value ahead of the HTTP
 Adapter's own background poll loop (poll interval configurable per device,
 default 5 s — the poll loop follows the same fan-out path via its own
 `PropertyEvent` call, not shown as a separate diagram).
@@ -371,8 +377,9 @@ default 5 s — the poll loop follows the same fan-out path via its own
 
 === 6.6 CAN Property Read (F-11, issue #25)
 
-See `architecture.jsonc` dynamic view `can-property-read` for the sequence
-diagram. Unlike §6.1/§6.4, step 4 onward isn't a live round trip at all: CAN
+image::arch-can-property-read.png[CAN Property Read Sequence,width=100%]
+
+Unlike §6.1/§6.4, step 4 onward isn't a live round trip at all: CAN
 is a broadcast bus with no request/response semantics for an arbitrary
 signal, so the CAN Adapter's read loop continuously decodes every frame
 matching a known DBC message ID into an in-memory cache (independently of
@@ -389,8 +396,9 @@ and `ReadProperty` simply answers from it.
 
 === 6.7 CAN Property Write (F-11, issue #25)
 
-See `architecture.jsonc` dynamic view `can-property-write` for the sequence
-diagram. Unlike HTTP (§6.4/§6.5, read-only) and like MQTT, CAN supports
+image::arch-can-property-write.png[CAN Property Write Sequence,width=100%]
+
+Unlike HTTP (§6.4/§6.5, read-only) and like MQTT, CAN supports
 `WriteProperty` (issue #25's AC list, unlike #24's).
 
 . Client calls `SetProperty(deviceId, "EngineTemp", value)` via gRPC

@@ -55,8 +55,7 @@ commands:
   schema publish <file.json>   publish a new capability schema version
   schema get <name>@<version>  fetch and print a published schema as JSON
   schema list [<name>]         list published schema versions, newest first
-
-global flags (each subcommand accepts these):
+global flags (schema subcommands):
   -gateway string   gateway gRPC address (default "localhost:50051", env UDAL_GATEWAY_ADDR)
   -api-key string   sent as the X-API-Key header (env UDAL_API_KEY)
   -ca string        path to a CA certificate to verify the gateway's server certificate (env UDAL_TLS_CA)

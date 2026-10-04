@@ -9,10 +9,12 @@ on:
       - "v*.*.*"
     paths:
       - "docs/**"
+      - "architecture.jsonc"
       - ".github/workflows/docs.yml"
   pull_request:
     paths:
       - "docs/**"
+      - "architecture.jsonc"
       - ".github/workflows/docs.yml"
   workflow_dispatch:
 
@@ -30,6 +32,66 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # ── 1. Install bausteinsicht (already used in CI for validation) ───────────
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "stable"
+          cache: true
+
+      - name: Install bausteinsicht
+        run: go install github.com/docToolchain/Bausteinsicht/cmd/bausteinsicht@latest
+
+      # ── 2. Convert Mermaid sources to PNG via mermaid-cli ─────────────────────
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Mermaid CLI
+        run: npm install -g @mermaid-js/mermaid-cli
+
+      - name: Write Puppeteer config (no-sandbox for CI)
+        run: |
+          cat > /tmp/puppeteer.json <<'EOF'
+          {"args": ["--no-sandbox", "--disable-setuid-sandbox"]}
+          EOF
+
+      # ── 3. Generate architecture diagrams ─────────────────────────────────────
+      - name: Export static view diagrams
+        run: |
+          mkdir -p docs/images
+          for view in context gateway_internal sdks adapters; do
+            bausteinsicht export-diagram \
+              --model architecture.jsonc \
+              --view "$view" \
+              --diagram-format mermaid > "docs/images/arch-${view}.mmd"
+            mmdc \
+              --input  "docs/images/arch-${view}.mmd" \
+              --output "docs/images/arch-${view}.png" \
+              --puppeteerConfigFile /tmp/puppeteer.json \
+              --theme neutral \
+              --width 1400
+            rm "docs/images/arch-${view}.mmd"
+          done
+
+      - name: Export sequence diagrams
+        run: |
+          for view in property-read device-registration telemetry-publish \
+                      http-property-read http-webhook-push \
+                      can-property-read can-property-write; do
+            bausteinsicht export-sequence \
+              --model architecture.jsonc \
+              --view "$view" \
+              --diagram-format mermaid > "docs/images/arch-${view}.mmd"
+            mmdc \
+              --input  "docs/images/arch-${view}.mmd" \
+              --output "docs/images/arch-${view}.png" \
+              --puppeteerConfigFile /tmp/puppeteer.json \
+              --theme neutral \
+              --width 1400
+            rm "docs/images/arch-${view}.mmd"
+          done
+
+      # ── 4. Build PDF ──────────────────────────────────────────────────────────
       - name: Install Asciidoctor PDF
         run: sudo gem install asciidoctor-pdf --no-document
 
@@ -47,7 +109,7 @@ jobs:
           path: dist/docs/udal-arc42.pdf
           retention-days: 30
 
-      # Attach to GitHub Release when triggered by a version tag
+      # ── 5. Attach to GitHub Release on version tags ───────────────────────────
       - name: Attach PDF to GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
