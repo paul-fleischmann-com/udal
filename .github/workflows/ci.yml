@@ -73,6 +73,12 @@ jobs:
               - 'architecture.jsonc'
             schema:
               - 'schema/**'
+            spdx:
+              - 'code/**/*.go'
+              - 'code/**/*.rs'
+              - 'code/**/*.py'
+              - 'code/**/*.ts'
+              - 'scripts/add-spdx-headers.py'
 
 # ─── Go: Build + Test + Lint + Security ──────────────────────────────────────
   go-build-test:
@@ -607,6 +613,34 @@ jobs:
             --schemafile schema/udal-capability.schema.json \
             schema/examples/*.json
 
+# ─── SPDX Header Check + Auto-fix ────────────────────────────────────────────
+# On PRs:        fails the build if any source file is missing its SPDX header.
+# On main push:  adds missing headers and commits them ([skip ci] prevents loop),
+#                then verifies with --check so a broken script is still caught.
+  spdx-check:
+    name: SPDX — Header check
+    needs: changes
+    if: needs.changes.outputs.spdx == 'true' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Add missing SPDX headers
+        run: python3 scripts/add-spdx-headers.py
+
+      - name: Commit added headers (main push only)
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git diff --quiet && echo "No missing headers." || \
+            (git commit -am "chore - add missing SPDX headers [skip ci]" && git push)
+
+      - name: Verify all headers present
+        run: python3 scripts/add-spdx-headers.py --check
+
 # ─── Architecture Validation ──────────────────────────────────────────────────
   architecture-validate:
     name: Architecture — Validate Bausteinsicht model
@@ -644,6 +678,7 @@ jobs:
       - demo-compose
       - schema-validate
       - architecture-validate
+      - spdx-check
     if: always()
     runs-on: ubuntu-latest
     steps:
