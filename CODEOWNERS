@@ -1,0 +1,24 @@
+# Global fallback — paulefl reviews everything not matched below
+* @paulefl
+
+# Gateway & transport adapters
+/code/gateway/ @paulefl
+
+# SDKs
+/code/sdk/go/       @paulefl
+/code/sdk/rust/     @paulefl
+/code/sdk/python/   @paulefl
+/code/sdk/typescript/ @paulefl
+
+# Protobuf API (breaking changes need extra attention)
+/code/api/ @paulefl
+
+# Architecture model
+/architecture.jsonc @paulefl
+
+# CI / release pipelines
+/.github/ @paulefl
+/.goreleaser.yaml @paulefl
+
+# Documentation
+/docs/ @paulefl

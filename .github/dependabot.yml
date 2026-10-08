@@ -1,0 +1,58 @@
+version: 2
+
+updates:
+  - package-ecosystem: gomod
+    directory: /code/gateway
+    schedule:
+      interval: weekly
+      day: monday
+    labels: [dependencies]
+
+  - package-ecosystem: gomod
+    directory: /code/sdk/go
+    schedule:
+      interval: weekly
+      day: monday
+    labels: [dependencies]
+
+  - package-ecosystem: gomod
+    directory: /code/cli
+    schedule:
+      interval: weekly
+      day: monday
+    labels: [dependencies]
+
+  - package-ecosystem: gomod
+    directory: /code/api/proto/gen
+    schedule:
+      interval: weekly
+      day: monday
+    labels: [dependencies]
+
+  - package-ecosystem: cargo
+    directory: /code/sdk/rust
+    schedule:
+      interval: weekly
+      day: monday
+    labels: [dependencies]
+
+  - package-ecosystem: pip
+    directory: /code/sdk/python
+    schedule:
+      interval: weekly
+      day: monday
+    labels: [dependencies]
+
+  - package-ecosystem: npm
+    directory: /code/sdk/typescript
+    schedule:
+      interval: weekly
+      day: monday
+    labels: [dependencies]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    labels: [dependencies, ci]
