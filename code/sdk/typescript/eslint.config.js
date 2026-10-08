@@ -4,6 +4,7 @@
 import js from "@eslint/js";
 import tsPlugin from "@typescript-eslint/eslint-plugin";
 import tsParser from "@typescript-eslint/parser";
+import globals from "globals";
 
 export default [
   js.configs.recommended,
@@ -16,8 +17,8 @@ export default [
         sourceType: "module",
       },
       globals: {
-        console: "readonly",
-        process: "readonly",
+        ...globals.node,
+        ...globals.browser,
       },
     },
     plugins: {
@@ -25,6 +26,7 @@ export default [
     },
     rules: {
       ...tsPlugin.configs.recommended.rules,
+      "no-undef": "off", // TypeScript's compiler handles undefined-variable checks
       "@typescript-eslint/no-unused-vars": [
         "error",
         { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
