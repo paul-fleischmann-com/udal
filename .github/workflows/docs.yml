@@ -135,7 +135,7 @@ jobs:
             docs/arc42/arc42.adoc
 
       - name: Upload PDF artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: udal-arc42-pdf
           path: dist/docs/udal-arc42.pdf
