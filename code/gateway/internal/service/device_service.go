@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Paul Fleischmann
+
 // Package service implements the gRPC DeviceService using the internal
 // registry and property store.
 package service

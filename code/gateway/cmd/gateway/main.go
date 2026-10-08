@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Paul Fleischmann
+
 // Command gateway starts the UDAL gRPC + REST gateway server.
 package main
 

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Paul Fleischmann
+
 // Package health implements the gateway's readiness endpoint (req42.adoc
 // F-21, GitHub issue #27): GET /health returns 503 while the gateway is
 // still starting up, and 200 once it's ready — with a per-adapter

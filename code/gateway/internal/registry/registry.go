@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Paul Fleischmann
+
 // Package registry provides an in-memory and bbolt-backed device registry.
 package registry
 

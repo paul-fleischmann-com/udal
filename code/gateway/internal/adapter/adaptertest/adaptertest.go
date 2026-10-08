@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Paul Fleischmann
+
 // Package adaptertest is the common conformance test suite every
 // adapter.Transport implementation — built-in or third-party — can run
 // against itself (req42.adoc F-12 AC: "Example third-party adapter

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Paul Fleischmann
+
 // Package echo is a reference third-party transport adapter (req42.adoc
 // F-12/QR-09, GitHub issue #26): a trivial in-memory store that proves the
 // adapter.Transport interface and the compiled-in registration path work

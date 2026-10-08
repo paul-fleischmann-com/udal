@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Paul Fleischmann
+
 //! Fixed-capacity property value type for the `mqtt` (no_std, no
 //! allocator) build. Mirrors [`crate::value::Value`] but bounds
 //! `String`/`Bytes` to a small, compile-time capacity via `heapless`

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Paul Fleischmann
+
 // Package heartbeat implements device online/offline detection (F-04,
 // GitHub issue #42): Registry persistence and UpdateStatus already exist
 // (#10) — this package is specifically the periodic timeout-detection

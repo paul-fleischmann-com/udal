@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 Paul Fleischmann
+
 """gRPC channel setup — mirrors code/sdk/go/dial.go."""
 
 from __future__ import annotations

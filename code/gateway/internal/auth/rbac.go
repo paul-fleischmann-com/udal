@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Paul Fleischmann
+
 // Package auth implements authentication (API-Key, mTLS, JWT Bearer) and
 // authorization (RBAC + per-device ACL) for the gRPC DeviceService.
 package auth

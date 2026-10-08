@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Paul Fleischmann
+
 // Package httpadapter implements the HTTP transport adapter (req42.adoc
 // F-10, GitHub issue #24): devices exposed over HTTP are read via a
 // synchronous GET per ReadProperty call, kept live for Subscribe via a

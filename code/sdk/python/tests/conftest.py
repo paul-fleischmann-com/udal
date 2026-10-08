@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 Paul Fleischmann
+
 """Shared pytest fixtures: an in-process asyncio gRPC server implementing
 DeviceServiceServicer, exercised by client/device tests instead of a real
 network connection — the Python equivalent of the Go SDK's

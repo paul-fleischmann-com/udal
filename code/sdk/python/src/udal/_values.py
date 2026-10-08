@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 Paul Fleischmann
+
 """Conversion between PropertyValue protobuf messages and native Python
 values — mirrors code/sdk/go/value.go's valueFromProto/valueToProto."""
 

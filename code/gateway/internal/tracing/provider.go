@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Paul Fleischmann
+
 // Package tracing wires OpenTelemetry distributed tracing into the gateway
 // (req42.adoc F-24, GitHub issue #29): a trace context is created on every
 // incoming request and propagated through auth, routing, and adapter calls

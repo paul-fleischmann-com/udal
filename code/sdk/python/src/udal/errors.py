@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 Paul Fleischmann
+
 """UdalError — raised by every SDK operation that fails (req42.adoc §7.3:
 "Python: raises UdalError(code, message)")."""
 

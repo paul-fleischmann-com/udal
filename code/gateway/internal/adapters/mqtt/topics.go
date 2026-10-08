@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Paul Fleischmann
+
 // Package mqtt implements the MQTT transport adapter (req42.adoc F-09,
 // GitHub issue #11): devices exposed over MQTT are read/written via a
 // request/response pattern over topics, rather than the direct-gRPC path

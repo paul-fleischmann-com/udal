@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Paul Fleischmann
+
 //! QR-08 flash/RAM budget check: links `udal-sdk`'s `no_std`, MQTT-only
 //! (`mqtt` feature) build into a minimal Cortex-M firmware image and
 //! exercises its main code paths (connect, publish a property) so the

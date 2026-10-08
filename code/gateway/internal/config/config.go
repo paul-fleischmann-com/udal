@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Paul Fleischmann
+
 // Package config loads the gateway's optional YAML configuration file
 // (req42.adoc §7.2, GitHub issue #41). Every field is overridable by its
 // documented UDAL_* environment variable; a missing file is not an error —

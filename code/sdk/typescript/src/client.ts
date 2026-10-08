@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Paul Fleischmann
+
 // UdalClient is the application-side SDK (req42.adoc §7.3): reads/writes
 // device properties, sends commands, and looks up registered devices —
 // over the gateway's REST/grpc-gateway transcoding

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Paul Fleischmann
+
 // Package udal is the Go client SDK for UDAL (Universal Device Abstraction
 // Layer). It provides two entry points:
 //

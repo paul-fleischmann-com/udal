@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Paul Fleischmann
+
 // Standard cortex-m-rt boilerplate: makes memory.x visible to the linker
 // via OUT_DIR, since cortex-m-rt's own link.x `INCLUDE`s it by name.
 use std::env;

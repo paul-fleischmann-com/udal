@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Paul Fleischmann
+
 //! Minimal, `no_std`/no-`alloc` JSON codec for exactly one shape: a
 //! single-field object holding a [`PropertyValue`] — `{"bool":true}`,
 //! `{"int":42}`, `{"float":1.5}`, `{"string":"..."}`, or

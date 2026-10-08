@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Paul Fleischmann
+
 //! Minimal MQTT v3.1.1 packet encode/decode — just enough for
 //! [`super::MqttDevice`]: `CONNECT`/`CONNACK`, `PUBLISH` (QoS 0 only, both
 //! directions), `SUBSCRIBE`/`SUBACK`, and `PINGREQ`/`PINGRESP`. No `alloc`:

@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 Paul Fleischmann
+
 """Connection configuration for the application-side Client and device-side
 Device (req42.adoc §7.3: "Connect(config) / constructor")."""
 

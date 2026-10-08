@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Paul Fleischmann
+
 //! Native property value type for the `std` (gRPC) build — converts to/from
 //! `udal.v1.PropertyValue` in [`crate::grpc::convert`]. Mirrors
 //! `code/sdk/go/value.go` and `code/sdk/python/src/udal/_values.py`.

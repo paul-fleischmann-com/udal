@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Paul Fleischmann
+
 #![cfg_attr(not(feature = "std"), no_std)]
 // The `mqtt` (no_std, no-allocator) build's `UdalError` inlines its message
 // into a fixed-capacity `heapless::String` (see error.rs) rather than

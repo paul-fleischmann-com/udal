@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Paul Fleischmann
+
 //! Device-side-only SDK over MQTT (QR-08): `no_std`, no allocator, for
 //! bare-metal/RTOS targets that can't carry a gRPC/HTTP2 stack. Talks the
 //! same topic convention as the gateway's MQTT transport adapter (see

@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 Paul Fleischmann
+
 """Device-side SDK (req42.adoc §7.3): registers with a gateway, publishes
 property values, and handles incoming commands.
 

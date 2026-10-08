@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 Paul Fleischmann
+
 """Python client SDK for UDAL (Universal Device Abstraction Layer).
 
 Two entry points, mirroring the Go SDK (code/sdk/go):

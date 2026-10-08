@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Paul Fleischmann
+
 // Package adapter defines the public contract third-party transport
 // adapters implement to plug into the gateway (req42.adoc F-12/QR-09,
 // GitHub issue #26) — distinct from internal/adapters/{mqtt,http,can},

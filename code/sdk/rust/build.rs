@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Paul Fleischmann
+
 // Compiles the shared `udal.v1` protobuf/gRPC definitions (source of truth:
 // code/api/proto/udal/v1/) into Rust via tonic-build, mirroring how the Go
 // SDK consumes buf-generated stubs and the Python SDK consumes

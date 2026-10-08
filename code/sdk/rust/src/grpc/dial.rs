@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Paul Fleischmann
+
 //! gRPC channel setup — mirrors `code/sdk/go/dial.go` and
 //! `code/sdk/python/src/udal/_channel.py`.
 

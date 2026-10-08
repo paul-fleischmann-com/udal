@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Paul Fleischmann
+
 // Conversion between the gateway's PropertyValue wire JSON and native
 // TypeScript values — mirrors code/sdk/go/value.go's valueFromProto/
 // valueToProto and code/sdk/python/src/udal/_values.py.

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Paul Fleischmann
+
 export interface ClientConfig {
   /** Base URL of the gateway's REST endpoint, e.g. "https://gateway.example.com" or "http://localhost:8080". */
   gatewayUrl: string;

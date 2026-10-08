@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Paul Fleischmann
+
 import { describe, expect, it, vi } from "vitest";
 import { UdalError, UdalErrorCode } from "./errors.js";
 import { encodePathSegments, HttpClient } from "./http.js";

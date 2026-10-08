@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Paul Fleischmann
+
 // Package metrics defines the gateway's Prometheus collectors (req42.adoc
 // F-22, GitHub issue #27) and a gRPC interceptor that records two of them
 // on every request. Collectors are package-level vars registered once via

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Paul Fleischmann
+
 //! Application- and device-side SDK over gRPC (req42.adoc §7.3, `std`
 //! feature) — mirrors `code/sdk/go` and `code/sdk/python`'s shape: a
 //! [`Client`] (application side) and a [`Device`] (device side), both

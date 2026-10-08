@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Paul Fleischmann
+
 //! Application-side SDK (req42.adoc §7.3): reads/writes device properties,
 //! sends commands, and subscribes to live property updates. Mirrors
 //! `code/sdk/go/client.go` and `code/sdk/python/src/udal/client.py`.

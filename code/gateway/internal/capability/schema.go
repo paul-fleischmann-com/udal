@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Paul Fleischmann
+
 // Package capability implements the Capability Registry service (F-13/
 // F-14/F-15, GitHub issue #22): stores, versions, and serves capability
 // schemas, and validates devices/property writes against them.

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Paul Fleischmann
+
 // Package logging builds the gateway's structured JSON log handler
 // (req42.adoc F-23, GitHub issue #28): every log line is JSON with
 // mandatory fields timestamp/level/component/trace_id, produced by

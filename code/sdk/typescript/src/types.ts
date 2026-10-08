@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Paul Fleischmann
+
 import type { PropertyValue } from "./value.js";
 
 /** One event delivered by `UdalClient.subscribe`. */

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Paul Fleischmann
+
 // Package api defines the core domain types shared between gRPC handlers
 // and the internal registry. These mirror the proto messages and will be
 // replaced / augmented by generated proto structs once buf generate runs.

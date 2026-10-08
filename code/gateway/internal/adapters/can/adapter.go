@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Paul Fleischmann
+
 // Package canadapter implements the CAN transport adapter (req42.adoc
 // F-11, GitHub issue #25): raw CAN frames are read from and written to a
 // Linux SocketCAN interface (net/can, req42.adoc TC-01 — Linux-only, see

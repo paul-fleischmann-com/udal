@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Paul Fleischmann
+
 // Command udal is the operator-facing CLI for the UDAL gateway (F-13,
 // GitHub issue #23): publish, fetch, and list capability schemas against a
 // running gateway's CapabilityService (#22).

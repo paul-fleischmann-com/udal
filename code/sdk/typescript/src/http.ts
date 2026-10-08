@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Paul Fleischmann
+
 // Minimal fetch-based HTTP client for the gateway's REST/grpc-gateway
 // transcoding — the transport layer underneath UdalClient. Isomorphic
 // between Node (>=20, built-in fetch) and browsers; the injectable
