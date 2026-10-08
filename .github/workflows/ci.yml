@@ -385,7 +385,7 @@ jobs:
         working-directory: code/sdk/python
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
@@ -435,7 +435,7 @@ jobs:
       # is a per-step `if`, not a job-level one — harmless once
       # dashboard/pyproject.toml exists in the checked-out commit, which
       # it does for every commit from this PR onward.
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         if: hashFiles('dashboard/pyproject.toml') != ''
         with:
           python-version: "3.12"
@@ -597,7 +597,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
