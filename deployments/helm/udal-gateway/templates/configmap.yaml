@@ -1,0 +1,30 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "udal-gateway.fullname" . }}
+  labels:
+    {{- include "udal-gateway.labels" . | nindent 4 }}
+data:
+  UDAL_DEV_INSECURE:       {{ .Values.gateway.devInsecure | quote }}
+  UDAL_GRPC_PORT:          {{ .Values.gateway.grpc.port | toString | quote }}
+  UDAL_HTTP_PORT:          {{ .Values.gateway.http.port | toString | quote }}
+  UDAL_METRICS_PORT:       {{ .Values.gateway.metrics.port | toString | quote }}
+  UDAL_LOG_LEVEL:          {{ .Values.gateway.logLevel | quote }}
+  UDAL_REGISTRY_PATH:      {{ .Values.gateway.registryPath | quote }}
+  {{- if .Values.gateway.mqttBroker }}
+  UDAL_MQTT_BROKER:        {{ .Values.gateway.mqttBroker | quote }}
+  {{- end }}
+  {{- if .Values.gateway.mqttClientId }}
+  UDAL_MQTT_CLIENT_ID:     {{ .Values.gateway.mqttClientId | quote }}
+  {{- end }}
+  {{- if .Values.gateway.otelEndpoint }}
+  UDAL_OTEL_ENDPOINT:      {{ .Values.gateway.otelEndpoint | quote }}
+  {{- end }}
+  {{- if .Values.tls.enabled }}
+  UDAL_TLS_CERT:           "/certs/tls/tls.crt"
+  UDAL_TLS_KEY:            "/certs/tls/tls.key"
+  {{- end }}
+  {{- if .Values.mtls.enabled }}
+  UDAL_MTLS_CA_CERT:       "/certs/mtls/ca.crt"
+  UDAL_MTLS_REQUIRED:      {{ .Values.mtls.required | toString | quote }}
+  {{- end }}

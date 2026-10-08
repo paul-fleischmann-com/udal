@@ -1,0 +1,18 @@
+UDAL Gateway {{ .Chart.AppVersion }} deployed successfully.
+
+  Release:   {{ .Release.Name }}
+  Namespace: {{ .Release.Namespace }}
+  Image:     {{ .Values.image.repository }}:{{ include "udal-gateway.imageTag" . }}
+
+Endpoints (within the cluster):
+  gRPC:    {{ include "udal-gateway.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.service.grpcPort }}
+  HTTP:    {{ include "udal-gateway.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.service.httpPort }}
+  Metrics: {{ include "udal-gateway.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.service.metricsPort }}
+
+Quick health check (from inside the cluster):
+  kubectl exec -n {{ .Release.Namespace }} deploy/{{ include "udal-gateway.fullname" . }} \
+    -- wget -qO- http://localhost:{{ .Values.gateway.metrics.port }}/health
+{{- if eq .Values.gateway.devInsecure "true" }}
+
+WARNING: UDAL_DEV_INSECURE=true — TLS is disabled. Do not use in production.
+{{- end }}
