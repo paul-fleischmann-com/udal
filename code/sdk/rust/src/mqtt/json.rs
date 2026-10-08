@@ -21,6 +21,7 @@ fn malformed() -> UdalError {
 
 const B64_ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
+#[allow(clippy::array_chunks)] // array_chunks::<3>() is nightly-only
 fn base64_encode(data: &[u8], out: &mut dyn core::fmt::Write) -> core::fmt::Result {
     let mut chunks = data.chunks_exact(3);
     for chunk in &mut chunks {
