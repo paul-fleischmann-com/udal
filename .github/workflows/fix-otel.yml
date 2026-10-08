@@ -1,0 +1,47 @@
+name: Bump otel to v1.45.0 in gateway
+
+# One-shot — trigger once, then this file can be deleted after the PR merges.
+# Fixes govulncheck failures (GO-2026-6505) on all Go Dependabot PRs by
+# updating otel from v1.44.0 to v1.45.0 in code/gateway.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  fix-otel:
+    name: Bump otel v1.45.0 in gateway
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "stable"
+          cache: true
+
+      - name: Bump otel in gateway
+        working-directory: code/gateway
+        run: |
+          go get go.opentelemetry.io/otel/sdk@v1.45.0
+          go get go.opentelemetry.io/otel/exporters/otlp/otlptrace@v1.45.0
+          go get go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc@v1.45.0
+          go mod tidy
+
+      - name: Create PR
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          branch: chore/fix-otel-1.45.0
+          commit-message: "#134 - chore - bump otel to v1.45.0 in gateway"
+          title: "#134 - chore - bump otel to v1.45.0 in gateway (fixes govulncheck)"
+          body: |
+            Bumps `go.opentelemetry.io/otel/{sdk,exporters/otlp/otlptrace,exporters/otlp/otlptrace/otlptracegrpc}`
+            from v1.44.0 to v1.45.0 in `code/gateway`.
+
+            Fixes `govulncheck` vulnerability GO-2026-6505 (OTel exporter config
+            logging may leak endpoint URLs). This was blocking all Go Dependabot PRs
+            because govulncheck scans the entire gateway and fails on any unfixed CVE.
+
+            Part of #134

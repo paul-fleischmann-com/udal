@@ -45,7 +45,7 @@ jobs:
       - name: Install draw.io AppImage
         run: |
           sudo apt-get install -y --no-install-recommends \
-            xvfb libgbm1 libnspr4 libnss3 libasound2 \
+            xvfb libgbm1 libnspr4 libnss3 libasound2t64 \
             libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 \
             libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2
           wget -q -O /tmp/drawio.AppImage \

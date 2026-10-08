@@ -118,15 +118,12 @@ jobs:
           cache: true
       - uses: golangci/golangci-lint-action@v7
         with:
-          # v6 hard-rejects any v2.x version string ("golangci-lint v2 is
-          # not supported by golangci-lint-action v6, you must update to
-          # golangci-lint-action v7") -- v7 is required to use v2.x at all.
-          # Pinned explicitly (not "latest"): v6's "latest" resolved to the
-          # final v1.x release (v1.64.8, built with go1.24), which refuses
-          # to lint any module whose go directive exceeds its own
-          # build-time Go version -- fails outright now that go.work is
-          # 1.25.0. v2.4.0+ is built with go1.25+.
-          version: v2.12.2
+          # "latest" keeps the golangci-lint binary in sync with the Go
+          # toolchain version used by the runner. Pinning a specific v2.x
+          # release would require manual bumps whenever the go directive in
+          # any go.mod exceeds the version golangci-lint was built with
+          # (e.g. v2.12.2 built with go1.26 rejects go1.27.x modules).
+          version: "latest"
           args: --timeout=5m ./code/gateway/... ./code/cli/...
 
   go-security:
