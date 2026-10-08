@@ -29,7 +29,7 @@ jobs:
       architecture: ${{ steps.filter.outputs.architecture }}
       schema:       ${{ steps.filter.outputs.schema }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dorny/paths-filter@v3
         id: filter
         with:
@@ -87,7 +87,7 @@ jobs:
     if: needs.changes.outputs.go == 'true' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v5
         with:
           go-version: "stable"
@@ -111,7 +111,7 @@ jobs:
     if: needs.changes.outputs.go == 'true' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v5
         with:
           go-version: "stable"
@@ -132,7 +132,7 @@ jobs:
     if: needs.changes.outputs.go == 'true' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v5
         with:
           go-version: "stable"
@@ -169,7 +169,7 @@ jobs:
     if: needs.changes.outputs.go == 'true' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0  # GoReleaser reads full tag/commit history for the changelog pipe
 
@@ -207,7 +207,7 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v5
         with:
           go-version: "stable"
@@ -230,7 +230,7 @@ jobs:
     if: needs.changes.outputs.go == 'true' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v5
         with:
           go-version: "stable"
@@ -273,7 +273,7 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v5
         with:
           go-version: "stable"
@@ -297,7 +297,7 @@ jobs:
       run:
         working-directory: code/sdk/rust
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
@@ -343,7 +343,7 @@ jobs:
       run:
         working-directory: code/sdk/rust/examples/embedded-size-check
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: thumbv7em-none-eabi
@@ -384,7 +384,7 @@ jobs:
       run:
         working-directory: code/sdk/python
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
@@ -419,7 +419,7 @@ jobs:
       run:
         working-directory: dashboard
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # dashboard/ was added in issue #19, but the "reflex" path filter
       # above also matches code/sdk/python/** (the dashboard depends on
       # it, issue #18) — a push to any branch/commit checked out from
@@ -471,7 +471,7 @@ jobs:
       run:
         working-directory: code/sdk/typescript
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
@@ -500,7 +500,7 @@ jobs:
     if: needs.changes.outputs.proto == 'true' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0  # needed for buf breaking against main
 
@@ -543,7 +543,7 @@ jobs:
       startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: docker/setup-buildx-action@v4
 
@@ -580,7 +580,7 @@ jobs:
     if: needs.changes.outputs.docker == 'true' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # docker compose v2 + curl + jq are all preinstalled on this runner
       # image -- no setup steps needed. TEAR_DOWN=1 so the stack doesn't
@@ -595,7 +595,7 @@ jobs:
     if: needs.changes.outputs.schema == 'true' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-python@v7
         with:
@@ -622,7 +622,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Add missing SPDX headers
         run: python3 scripts/add-spdx-headers.py
@@ -645,7 +645,7 @@ jobs:
     if: needs.changes.outputs.architecture == 'true' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v5
         with:
           go-version: "stable"
