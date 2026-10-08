@@ -199,6 +199,40 @@ Breaking changes: append `!` after scope and add `BREAKING CHANGE:` in footer.
 
 ---
 
+## License & SPDX Headers
+
+Every hand-written source file (`.go`, `.rs`, `.py`, `.ts`) must carry an SPDX header as its first two lines:
+
+```go
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Paul Fleischmann
+```
+
+```python
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 Paul Fleischmann
+```
+
+Generated files (e.g. protobuf stubs `*_pb2.py`, `*_pb2_grpc.py`) are excluded automatically.
+
+### Adding headers to new files
+
+```bash
+python3 scripts/add-spdx-headers.py
+```
+
+Scans `code/` and prepends the header to every file that is missing it.
+
+### Checking headers in CI
+
+```bash
+python3 scripts/add-spdx-headers.py --check
+```
+
+Exits with code `1` and lists every file without a header. Run this locally before pushing, or integrate it into CI to catch new files early.
+
+---
+
 ## Privacy / PII
 
 `Device.Labels` and property values are free-form and end up persisted in the device
