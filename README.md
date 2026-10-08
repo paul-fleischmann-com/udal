@@ -84,7 +84,7 @@ let mut client = UDALClient::connect("http://localhost:50051").await?;
 let devices = client.list_devices(()).await?;
 ```
 
-See [`code/gateway/examples/`](code/gateway/examples/) and [`examples/`](examples/) for runnable demos.
+See [`examples/README.adoc`](examples/README.adoc) for a full walkthrough: Docker stack → device registration → property read/write → gRPC streaming → Reflex dashboard.
 
 ## SDKs
 
@@ -94,6 +94,17 @@ See [`code/gateway/examples/`](code/gateway/examples/) and [`examples/`](example
 | Python | `udal-sdk` (PyPI) | gRPC (asyncio) |
 | TypeScript / Node.js | `udal-sdk` (npm) | REST / HTTP |
 | Rust | `udal-sdk` (crates.io) | gRPC (std) · MQTT-only (`no_std`, embedded) |
+
+## API Documentation
+
+| Format | File |
+|---|---|
+| **OpenAPI v3** (REST / grpc-gateway) | [`code/api/openapi/udal/v1/device.openapi.v3.json`](code/api/openapi/udal/v1/device.openapi.v3.json) |
+| **OpenAPI v2 / Swagger** | [`code/api/openapi/udal/v1/device.swagger.json`](code/api/openapi/udal/v1/device.swagger.json) |
+| **Protobuf** (gRPC source of truth) | [`code/api/proto/udal/v1/`](code/api/proto/udal/v1/) |
+| **Capability schema API** | [`code/api/openapi/udal/v1/capability.swagger.json`](code/api/openapi/udal/v1/capability.swagger.json) |
+
+The gateway also exposes gRPC reflection at runtime — no `.proto` file needed for tools like `grpcurl` or Postman.
 
 ## Architecture
 
