@@ -61,25 +61,26 @@ changelog:
   abbrev: 9
   groups:
     - title: "Features"
-      regexp: '^.*?feat(\([[:word:]:,-]+\))??!?:.+$'
+      # matches: "feat(scope): ..." and "#123 - feat - ..."
+      regexp: '^(#[0-9]+ - feat|feat(\([[:word:]:,-]+\))??!?:).+$'
       order: 0
     - title: "Bug fixes"
-      regexp: '^.*?fix(\([[:word:]:,-]+\))??!?:.+$'
+      regexp: '^(#[0-9]+ - fix|fix(\([[:word:]:,-]+\))??!?:).+$'
       order: 1
     - title: "Performance"
-      regexp: '^.*?perf(\([[:word:]:,-]+\))??!?:.+$'
+      regexp: '^(#[0-9]+ - perf|perf(\([[:word:]:,-]+\))??!?:).+$'
       order: 2
     - title: "Documentation"
-      regexp: '^.*?docs(\([[:word:]:,-]+\))??!?:.+$'
+      regexp: '^(#[0-9]+ - docs|docs(\([[:word:]:,-]+\))??!?:).+$'
       order: 3
     - title: Other
       order: 999
   filters:
     exclude:
-      - "^chore"
-      - "^ci"
-      - "^test"
-      - "^refactor"
+      - '^(#[0-9]+ - )?chore'
+      - '^(#[0-9]+ - )?ci'
+      - '^(#[0-9]+ - )?test'
+      - '^(#[0-9]+ - )?refactor'
       - "Merge pull request"
       - "Merge branch"
 
