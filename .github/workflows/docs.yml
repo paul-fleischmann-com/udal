@@ -52,6 +52,8 @@ jobs:
             "https://github.com/jgraph/drawio-desktop/releases/download/v26.0.4/drawio-x86_64-26.0.4.AppImage"
           chmod +x /tmp/drawio.AppImage
           cd /tmp && ./drawio.AppImage --appimage-extract > /dev/null
+          sudo chown root:root /tmp/squashfs-root/chrome-sandbox
+          sudo chmod 4755 /tmp/squashfs-root/chrome-sandbox
           echo "BAUSTEINSICHT_DRAWIO_PATH=/tmp/squashfs-root/drawio" >> "$GITHUB_ENV"
 
       # ── 3. Static views: sync → auto-layout → export via draw.io ─────────────
