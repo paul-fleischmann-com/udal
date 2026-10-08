@@ -116,7 +116,7 @@ jobs:
         with:
           go-version: "stable"
           cache: true
-      - uses: golangci/golangci-lint-action@v7
+      - uses: golangci/golangci-lint-action@v9
         with:
           # "latest" keeps the golangci-lint binary in sync with the Go
           # toolchain version used by the runner. Pinning a specific v2.x
