@@ -51,7 +51,7 @@ jobs:
           go mod tidy
 
       - name: Create PR for Go fixes
-        uses: peter-evans/create-pull-request@v7
+        uses: peter-evans/create-pull-request@v8
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           branch: chore/fix-go-deps
@@ -83,7 +83,7 @@ jobs:
         run: cargo update rustls --precise 0.23.45
 
       - name: Create PR for Rust fixes
-        uses: peter-evans/create-pull-request@v7
+        uses: peter-evans/create-pull-request@v8
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           branch: chore/fix-rust-deps
@@ -117,7 +117,7 @@ jobs:
           npx npm@latest audit fix --force
 
       - name: Create PR for npm fixes
-        uses: peter-evans/create-pull-request@v7
+        uses: peter-evans/create-pull-request@v8
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           branch: chore/fix-npm-deps
