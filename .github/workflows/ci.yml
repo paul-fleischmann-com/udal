@@ -116,7 +116,7 @@ jobs:
         with:
           go-version: "stable"
           cache: true
-      - uses: golangci/golangci-lint-action@v7
+      - uses: golangci/golangci-lint-action@v9
         with:
           # v6 hard-rejects any v2.x version string ("golangci-lint v2 is
           # not supported by golangci-lint-action v6, you must update to
