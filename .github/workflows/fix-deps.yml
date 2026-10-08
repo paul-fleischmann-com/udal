@@ -113,8 +113,8 @@ jobs:
       - name: npm audit fix (TypeScript SDK)
         working-directory: code/sdk/typescript
         run: |
-          npm install
-          npm audit fix --force
+          npm ci
+          npx npm@latest audit fix --force
 
       - name: Create PR for npm fixes
         uses: peter-evans/create-pull-request@v7
