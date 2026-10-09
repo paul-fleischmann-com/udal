@@ -1,24 +1,24 @@
-# Global fallback — both owners review everything not matched below
-* @paulefl @dev-paul-fleischmann
+# All sections owned by the udal-codeowners team (paulefl + dev-paul-fleischmann)
+* @paul-fleischmann-com/udal-codeowners
 
 # Gateway & transport adapters
-/code/gateway/ @paulefl @dev-paul-fleischmann
+/code/gateway/ @paul-fleischmann-com/udal-codeowners
 
 # SDKs
-/code/sdk/go/         @paulefl @dev-paul-fleischmann
-/code/sdk/rust/       @paulefl @dev-paul-fleischmann
-/code/sdk/python/     @paulefl @dev-paul-fleischmann
-/code/sdk/typescript/ @paulefl @dev-paul-fleischmann
+/code/sdk/go/         @paul-fleischmann-com/udal-codeowners
+/code/sdk/rust/       @paul-fleischmann-com/udal-codeowners
+/code/sdk/python/     @paul-fleischmann-com/udal-codeowners
+/code/sdk/typescript/ @paul-fleischmann-com/udal-codeowners
 
 # Protobuf API (breaking changes need extra attention)
-/code/api/ @paulefl @dev-paul-fleischmann
+/code/api/ @paul-fleischmann-com/udal-codeowners
 
 # Architecture model
-/architecture.jsonc @paulefl @dev-paul-fleischmann
+/architecture.jsonc @paul-fleischmann-com/udal-codeowners
 
 # CI / release pipelines
-/.github/ @paulefl @dev-paul-fleischmann
-/.goreleaser.yaml @paulefl @dev-paul-fleischmann
+/.github/ @paul-fleischmann-com/udal-codeowners
+/.goreleaser.yaml @paul-fleischmann-com/udal-codeowners
 
 # Documentation
-/docs/ @paulefl @dev-paul-fleischmann
+/docs/ @paul-fleischmann-com/udal-codeowners
