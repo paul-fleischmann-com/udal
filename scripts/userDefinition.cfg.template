@@ -1,0 +1,8 @@
+# Copy this file to scripts/userDefinition.cfg and fill in your GitHub accounts.
+# userDefinition.cfg is git-ignored and must NOT be committed.
+
+# Account used to review / approve PRs
+REVIEWER_ACCOUNT=dev-paul-fleischmann
+
+# Primary account (author, switched back to after review actions)
+MAIN_ACCOUNT=paulefl

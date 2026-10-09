@@ -39,3 +39,6 @@ udal-capability.db
 # Generated build artefacts (docs workflow)
 docs/arc42/generated/
 docs/images/arch-*.png
+
+# Local developer config (contains account names — not for commit)
+scripts/userDefinition.cfg

@@ -6,7 +6,16 @@ Developer scripts for the UDAL repository. Run all scripts from the **repository
 
 ## `approve-PR.sh`
 
-Approves a GitHub Pull Request as the `dev-paul-fleischmann` reviewer account and switches back to `paulefl` afterwards.
+Approves a GitHub Pull Request as the reviewer account defined in `scripts/userDefinition.cfg` and switches back to the main account afterwards.
+
+**Setup (one-time):**
+
+```bash
+cp scripts/userDefinition.cfg.template scripts/userDefinition.cfg
+# edit scripts/userDefinition.cfg with your account names
+```
+
+`userDefinition.cfg` is git-ignored and must not be committed.
 
 **Prerequisites:** both accounts must be authenticated via `gh auth` (`gh auth status` should list both).
 
