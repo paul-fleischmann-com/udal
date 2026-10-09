@@ -28,7 +28,7 @@ To register as an integrator and receive early-warning notifications, contact **
 
 **Please do not report security vulnerabilities via public GitHub Issues.**
 
-Send a detailed report to: **paul.fleischmann81@gmail.com**
+Send a detailed report to: **paul.fleischmann@paul-fleischmann.com**
 
 Include in your report:
 - Description of the vulnerability and its potential impact

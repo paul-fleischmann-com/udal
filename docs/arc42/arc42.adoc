@@ -551,7 +551,7 @@ gateway:
 
 ==== Authentication & Authorisation
 
-* Every listener (gRPC port 50051, REST port 8080) requires authentication — no unauthenticated endpoint exists except `GET /health`.
+* Every listener (gRPC port 50051, REST port 8080) requires authentication. The dedicated metrics port (9090) is authentication-free by design and exposes only `GET /health`, `GET /metrics` (Prometheus), and `POST /debug/log-level` — it must not be exposed outside the cluster/host network.
 * Three auth mechanisms are supported and composable: **API keys** (bcrypt-hashed at rest, never returned in API responses), **JWT/OIDC** (validated against a configurable JWKS endpoint, issuer and audience claims enforced), and **mTLS** (client certificate chain validated against a configurable CA).
 * A gRPC/HTTP interceptor runs before every handler; a rejected credential short-circuits the call with `UNAUTHENTICATED` — no device state is read or mutated.
 * RBAC: every API key and JWT carries a role (`admin`, `operator`, `viewer`). Write operations require at least `operator`; administrative operations require `admin`.
@@ -565,8 +565,9 @@ gateway:
 
 ==== Input Validation
 
-* All gRPC message fields are validated by the auth interceptor and by individual service handlers; out-of-range or structurally invalid values return `INVALID_ARGUMENT` before any device interaction.
-* Device IDs and property names are validated against an allow-list regex before database writes.
+* All gRPC message fields are validated by individual service handlers; missing required fields return `INVALID_ARGUMENT` before any device interaction.
+* Device IDs are validated for non-empty at the service layer; MQTT device IDs are additionally validated against MQTT topic-segment rules (`validTopicSegment`) before any broker interaction.
+* Property values are validated against the device's declared capability schema (F-15) before any write.
 
 ==== Secrets Management
 
