@@ -1,0 +1,391 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Paul Fleischmann
+= UDAL BeagleBone Black Demo
+:toc: left
+:toc-title: Inhalt
+:toclevels: 2
+:icons: font
+:source-highlighter: rouge
+:rouge-style: github
+:imagesdir: images
+:experimental:
+:sectnums:
+
+// M5 · #45 · Demo Setup Guide — HTTP Adapter (Weg 1, kein Eingriff ins BBB-Repo)
+
+== Überblick
+
+Demonstriert wie ein *BeagleBone Black* (BME280-Sensor, GPIO) über den UDAL HTTP Adapter als reguläres UDAL-Device exponiert wird — ohne eine einzige Code-Änderung im link:https://github.com/paul-fleischmann-com/beaglebone_black[beaglebone_black-Repo].
+
+[cols="1,3"]
+|===
+| Weg | HTTP Adapter (Polling) — Weg 1 aus #45
+| UDAL-Version | v1.0.0
+| BeagleBone IP | `192.168.7.2:5000` (USB-OTG Standard)
+| Poll-Intervall | 5 s (konfigurierbar)
+|===
+
+.Architektur
+....
+BeagleBone Black          UDAL Gateway         Client
+:5000 REST API   <---->   HTTP Adapter  <---->  gRPC :50051
+BME280 · GPIO             pollt :5000           REST :8080
+....
+
+== Voraussetzungen & Netzwerk
+
+=== Verbindung prüfen
+
+BeagleBone Black exposes über USB-OTG standardmäßig `192.168.7.2`.
+
+[source,bash]
+----
+# SSH-Verbindung (Passwort: temppwd)
+ssh debian@192.168.7.2
+
+# Alternativ mit Key
+ssh -i ~/.ssh/beagle_key debian@192.168.7.2
+
+# Ping-Check
+ping 192.168.7.2
+----
+
+=== UDAL v1.0.0 herunterladen
+
+[source,bash]
+----
+# Linux amd64
+curl -LO https://github.com/paul-fleischmann-com/udal/releases/download/v1.0.0/udal-gateway_1.0.0_linux_amd64.tar.gz
+tar xzf udal-gateway_1.0.0_linux_amd64.tar.gz
+chmod +x udal-gateway
+
+# Oder Docker
+docker pull ghcr.io/paul-fleischmann-com/udal:1.0.0
+----
+
+== BeagleBone REST-API testen
+
+Sicherstellen dass die Go-API auf Port 5000 läuft und Sensordaten liefert.
+
+[source,bash]
+----
+# Health-Check
+curl http://192.168.7.2:5000/health
+----
+
+[source,json]
+----
+{
+  "status":  "ok",
+  "backend": "auto",
+  "driver":  "Auto Driver (C→Rust)",
+  "arch":    "armv7"
+}
+----
+
+[source,bash]
+----
+# BME280-Sensor auslesen
+curl http://192.168.7.2:5000/api/v1/bme280
+----
+
+[source,json]
+----
+{
+  "temperature": 23.45,
+  "humidity":    48.72,
+  "pressure":    1013.25,
+  "altitude":    89.3,
+  "timestamp":   "2026-10-09T09:00:00Z",
+  "backend":     "c"
+}
+----
+
+[source,bash]
+----
+# GPIO-Status lesen
+curl http://192.168.7.2:5000/api/v1/gpio
+curl http://192.168.7.2:5000/api/v1/gpio/60   # USR0 LED
+----
+
+== UDAL Gateway starten
+
+WARNING: `--dev` deaktiviert TLS — nur für lokale Demo-Umgebungen. In Produktion TLS + API-Key verwenden.
+
+.Binary
+[source,bash]
+----
+./udal-gateway \
+  --dev \
+  --bootstrap-api-key demo-key-123 \
+  --grpc-addr :50051 \
+  --http-addr :8080 \
+  --metrics-addr :9090
+----
+
+.Docker
+[source,bash]
+----
+docker run --rm \
+  -p 50051:50051 -p 8080:8080 -p 9090:9090 \
+  -e UDAL_DEV_INSECURE=true \
+  -e UDAL_BOOTSTRAP_API_KEY=demo-key-123 \
+  ghcr.io/paul-fleischmann-com/udal:1.0.0
+----
+
+.Gateway-Health prüfen
+[source,bash]
+----
+curl http://localhost:9090/health
+# → {"status":"ready"}
+----
+
+== Capability-Schema anlegen
+
+Das Schema beschreibt welche Properties das BeagleBone-Device hat.
+Es wird beim Gateway registriert bevor das Device angemeldet werden kann.
+
+.beaglebone-bme280.schema.json
+[source,json]
+----
+{
+  "name":        "beaglebone-bme280",
+  "version":     "1.0",
+  "description": "BeagleBone Black — BME280 Sensor + GPIO",
+  "properties": {
+    "temperature": {
+      "type":     "float",
+      "unit":     "°C",
+      "readable": true,
+      "writable": false
+    },
+    "humidity": {
+      "type":     "float",
+      "unit":     "%rH",
+      "readable": true,
+      "writable": false
+    },
+    "pressure": {
+      "type":     "float",
+      "unit":     "hPa",
+      "readable": true,
+      "writable": false
+    },
+    "gpio_usr0": {
+      "type":        "int",
+      "description": "USR0 LED (GPIO 60)",
+      "readable":    true,
+      "writable":    true
+    }
+  }
+}
+----
+
+.Schema beim Gateway registrieren
+[source,bash]
+----
+curl -X POST http://localhost:8080/api/v1/capabilities \
+  -H "Authorization: Bearer demo-key-123" \
+  -H "Content-Type: application/json" \
+  -d @beaglebone-bme280.schema.json
+----
+
+== Device registrieren
+
+Der HTTP Adapter benötigt eine `transport_config` mit der Base-URL der BeagleBone-API und einem Poll-Intervall pro Property.
+
+[source,bash]
+----
+curl -X POST http://localhost:8080/api/v1/devices \
+  -H "Authorization: Bearer demo-key-123" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name":       "beaglebone-01",
+    "capability": "beaglebone-bme280@1.0",
+    "transport":  "http",
+    "transport_config": {
+      "base_url":      "http://192.168.7.2:5000",
+      "poll_interval": "5s",
+      "endpoints": {
+        "temperature": "/api/v1/bme280",
+        "humidity":    "/api/v1/bme280",
+        "pressure":    "/api/v1/bme280",
+        "gpio_usr0":   "/api/v1/gpio/60"
+      },
+      "json_paths": {
+        "temperature": "$.temperature",
+        "humidity":    "$.humidity",
+        "pressure":    "$.pressure",
+        "gpio_usr0":   "$.value"
+      }
+    },
+    "labels": {
+      "location": "desk",
+      "hw":       "beaglebone-black"
+    }
+  }'
+----
+
+.Device-Liste prüfen
+[source,bash]
+----
+curl http://localhost:8080/api/v1/devices \
+  -H "Authorization: Bearer demo-key-123"
+----
+
+TIP: Mit `grpcurl` alternativ über gRPC: +
+`grpcurl -plaintext -d '{"name":"beaglebone-01",...}' localhost:50051 udal.v1.DeviceService/RegisterDevice`
+
+== Properties lesen
+
+=== REST
+
+[source,bash]
+----
+# Temperatur
+curl "http://localhost:8080/api/v1/devices/beaglebone-01/properties/temperature" \
+  -H "Authorization: Bearer demo-key-123"
+
+# Alle Properties
+curl "http://localhost:8080/api/v1/devices/beaglebone-01/properties" \
+  -H "Authorization: Bearer demo-key-123"
+----
+
+=== Python SDK
+
+[source,bash]
+----
+pip install udal-sdk
+----
+
+[source,python]
+----
+import asyncio
+from udal import UDALClient
+
+async def main():
+    async with UDALClient(
+        "localhost:50051",
+        api_key="demo-key-123",
+        insecure=True
+    ) as client:
+        temp = await client.get_property("beaglebone-01", "temperature")
+        print(f"Temperatur: {temp.value}°C")
+
+asyncio.run(main())
+----
+
+=== Go SDK
+
+[source,bash]
+----
+go get github.com/paulefl/udal/code/sdk/go
+----
+
+[source,go]
+----
+client, _ := udal.Dial("localhost:50051",
+    udal.WithAPIKey("demo-key-123"),
+    udal.WithInsecure(),
+)
+defer client.Close()
+
+val, _ := client.GetProperty(ctx, "beaglebone-01", "temperature")
+fmt.Printf("Temperatur: %.2f°C\n", val.Float())
+----
+
+== Live-Streaming (Subscribe)
+
+Property-Updates in Echtzeit empfangen — Gateway pollt BBB alle 5 s und pusht Änderungen.
+
+[source,python]
+----
+async def stream():
+    async with UDALClient("localhost:50051", api_key="demo-key-123", insecure=True) as c:
+        async for update in c.subscribe("beaglebone-01", "temperature"):
+            print(f"[{update.timestamp}] {update.value:.2f}°C")
+
+asyncio.run(stream())
+----
+
+[source,bash]
+----
+# grpcurl
+grpcurl -plaintext \
+  -H "authorization: Bearer demo-key-123" \
+  -d '{"device_id":"beaglebone-01","property_path":"temperature"}' \
+  localhost:50051 udal.v1.DeviceService/SubscribeProperty
+----
+
+== GPIO schreiben (optional)
+
+USR0-LED am BeagleBone über UDAL `SetProperty` ein-/ausschalten.
+
+[source,bash]
+----
+# LED einschalten
+curl -X PUT \
+  "http://localhost:8080/api/v1/devices/beaglebone-01/properties/gpio_usr0" \
+  -H "Authorization: Bearer demo-key-123" \
+  -H "Content-Type: application/json" \
+  -d '{"value": 1}'
+----
+
+[source,python]
+----
+# LED blinken lassen
+for _ in range(5):
+    await client.set_property("beaglebone-01", "gpio_usr0", 1)
+    await asyncio.sleep(0.5)
+    await client.set_property("beaglebone-01", "gpio_usr0", 0)
+    await asyncio.sleep(0.5)
+----
+
+== Video-Skript (#147)
+
+Reihenfolge und Hinweise für den Demo-Walkthrough (Ziel: 6–8 Minuten).
+
+[cols="1,1,4"]
+|===
+| Szene | Zeit | Inhalt
+
+| 1
+| 0:00 – 0:45
+| *Intro:* "UDAL löst ein echtes Problem — du hast ein Gerät, es spricht sein eigenes Protokoll, und du willst es einfach in deine App einbinden." +
+_Screen: UDAL GitHub Release-Seite, v1.0.0 Assets_
+
+| 2
+| 0:45 – 1:30
+| *Gateway starten:* Binary herunterladen, `./udal-gateway --dev --bootstrap-api-key demo-key-123`. +
+_Screen: Terminal, Gateway-Startlog, `curl localhost:9090/health` → ready_
+
+| 3
+| 1:30 – 2:30
+| *BeagleBone zeigen:* Hardware kurz zeigen, SSH-Verbindung, `curl 192.168.7.2:5000/api/v1/bme280` — echte Messwerte. +
+_Screen: Split — Hardware-Kamera + Terminal_
+
+| 4
+| 2:30 – 3:30
+| *Schema + Device registrieren:* Schema-POST, dann Device-POST mit HTTP-transport_config. +
+"Das war's — kein Code im BeagleBone-Repo."
+
+| 5
+| 3:30 – 5:00
+| *Properties lesen — Python SDK:* Live im REPL, dann `subscribe()` starten. Hand nähert sich Sensor → Temperatur steigt live.
+
+| 6
+| 5:00 – 6:00
+| *GPIO-Demo:* `set_property("gpio_usr0", 1)` → USR0 LED leuchtet. Blink-Loop live. +
+_Screen: Terminal + Hardware-Kamera gleichzeitig_
+
+| 7
+| 6:00 – 7:00
+| *Outro:* "UDAL v1.0 — Release auf GitHub, Helm-Chart, SBOM inklusive. Apache 2.0." Links einblenden.
+|===
+
+== Akzeptanzkriterien (#46)
+
+* [ ] Capability-Schema `beaglebone-bme280@1.0` validiert gegen Meta-Schema
+* [ ] Gateway registriert den BeagleBone als `transport: http` Device
+* [ ] `GetProperty`/`Subscribe` liefert echte Sensordaten vom laufenden Gerät
+* [ ] Diese Anleitung vorhanden unter `examples/beaglebone/README.adoc`
