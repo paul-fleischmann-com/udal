@@ -4,15 +4,31 @@
 
 | Version | Supported |
 |---------|-----------|
-| 0.x (pre-release) | ✅ Current development branch |
+| 1.x | ✅ Current stable release |
+| 0.x (pre-release) | ⚠️ Best-effort only |
 
-Once v1.0.0 is released, only the latest minor release will receive security fixes.
+Only the latest minor release receives security fixes.
+
+## EU Cyber Resilience Act (CRA) — Incident Reporting
+
+UDAL is classified as a **Product with Digital Elements** under Regulation (EU) 2024/2847 (CRA).
+Integrators who ship UDAL as part of a commercial product bear the primary reporting obligations.
+
+As the upstream open-source steward, Paul Fleischmann follows this process for actively exploited vulnerabilities:
+
+| Timeline | Action | Recipient |
+|----------|--------|-----------|
+| **Within 24 hours** | Early warning notification for any actively exploited vulnerability | [ENISA EUVDB](https://euvdb.enisa.europa.eu) + affected integrators on the advisory list |
+| **Within 72 hours** | Incident notification with impact assessment, affected versions and interim mitigations | ENISA EUVDB |
+| **Within 14 days** | Final report with root cause, patch, and CVSS score | ENISA EUVDB + public GitHub Security Advisory |
+
+To register as an integrator and receive early-warning notifications, contact **paul.fleischmann@paul-fleischmann.com** with subject `[UDAL] Integrator Registration`.
 
 ## Reporting a Vulnerability
 
 **Please do not report security vulnerabilities via public GitHub Issues.**
 
-Send a detailed report to: **paul.fleischmann81@gmail.com**
+Send a detailed report to: **paul.fleischmann@paul-fleischmann.com**
 
 Include in your report:
 - Description of the vulnerability and its potential impact
