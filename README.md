@@ -160,6 +160,19 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the full development guide, component
 Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a PR.
 Found a security issue? See [SECURITY.md](SECURITY.md).
 
+## EU Cyber Resilience Act (CRA)
+
+UDAL is a **Product with Digital Elements** under Regulation (EU) 2024/2847 (CRA, effective 11 September 2027).
+
+**For integrators** shipping UDAL as part of a commercial or CE-marked product:
+
+- You bear the primary CRA obligations as the manufacturer placing the product on the EU market.
+- Each release includes a **CycloneDX SBOM** as a release asset — use it for your own bill-of-materials and conformity documentation.
+- Subscribe to [GitHub Security Advisories](https://github.com/paul-fleischmann-com/udal/security/advisories) for vulnerability notifications.
+- Register as an integrator (see [`SECURITY.md`](SECURITY.md)) to receive early-warning notifications within the 24 h/72 h ENISA reporting windows.
+
+UDAL itself is provided as open-source software. The open-source steward role (Art. 17 CRA) applies as long as UDAL is not directly commercialised by this project.
+
 ## License
 
 Apache 2.0 — see [LICENSE](LICENSE).
