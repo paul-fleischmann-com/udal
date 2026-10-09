@@ -28,6 +28,7 @@ jobs:
       docker:       ${{ steps.filter.outputs.docker }}
       architecture: ${{ steps.filter.outputs.architecture }}
       schema:       ${{ steps.filter.outputs.schema }}
+      helm:         ${{ steps.filter.outputs.helm }}
     steps:
       - uses: actions/checkout@v7
       - uses: dorny/paths-filter@v3
@@ -73,6 +74,8 @@ jobs:
               - 'architecture.jsonc'
             schema:
               - 'schema/**'
+            helm:
+              - 'deployments/helm/**'
             spdx:
               - 'code/**/*.go'
               - 'code/**/*.rs'
@@ -656,6 +659,24 @@ jobs:
       - name: Validate architecture model
         run: bausteinsicht validate --model architecture.jsonc
 
+# ─── Helm ─────────────────────────────────────────────────────────────────────
+  helm-lint:
+    name: Helm — lint udal-gateway chart
+    needs: changes
+    if: needs.changes.outputs.helm == 'true' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: "latest"
+
+      - name: helm lint
+        run: |
+          helm lint deployments/helm/udal-gateway \
+            --set gateway.apiKey="ci:admin:ci-secret"
+
 # ─── Summary Gate ─────────────────────────────────────────────────────────────
   ci-gate:
     name: CI Gate (all checks passed)
@@ -676,6 +697,7 @@ jobs:
       - schema-validate
       - architecture-validate
       - spdx-check
+      - helm-lint
     if: always()
     runs-on: ubuntu-latest
     steps:

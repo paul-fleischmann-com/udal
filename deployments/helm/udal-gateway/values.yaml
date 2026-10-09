@@ -1,0 +1,82 @@
+replicaCount: 1
+
+image:
+  repository: ghcr.io/paul-fleischmann-com/udal
+  pullPolicy: IfNotPresent
+  tag: ""  # defaults to .Chart.AppVersion
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+# Gateway configuration passed as environment variables.
+# Sensitive values (apiKey, tls.*) go into a Secret; the rest into a ConfigMap.
+gateway:
+  # Required: bootstrap API key (format "name:role:secret")
+  apiKey: ""
+
+  # Set to "true" to disable TLS (dev/test only)
+  devInsecure: "false"
+
+  grpc:
+    port: 50051
+  http:
+    port: 8080
+  metrics:
+    port: 9090
+
+  logLevel: "info"
+
+  # MQTT broker URL, e.g. "tcp://mosquitto:1883" or "ssl://broker:8883"
+  mqttBroker: ""
+  mqttClientId: ""
+
+  # Path to the device registry database inside the container
+  registryPath: "/data/udal-registry.db"
+
+  # OpenTelemetry collector endpoint (leave empty to disable)
+  otelEndpoint: ""
+
+# TLS: mount server cert/key from a Kubernetes Secret.
+# Set secretName to the name of a Secret with keys tls.crt and tls.key.
+tls:
+  enabled: false
+  secretName: ""
+
+# mTLS: CA cert for client-certificate validation.
+# Set secretName to a Secret with key ca.crt.
+mtls:
+  enabled: false
+  required: false
+  secretName: ""
+
+persistence:
+  enabled: true
+  storageClass: ""
+  accessMode: ReadWriteOnce
+  size: 1Gi
+
+service:
+  type: ClusterIP
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts: []
+  tls: []
+
+resources: {}
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+podAnnotations: {}
+podSecurityContext: {}
+securityContext: {}
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""

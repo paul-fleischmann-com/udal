@@ -1,0 +1,16 @@
+apiVersion: v2
+name: udal-gateway
+description: UDAL Gateway — Universal Device Abstraction Layer
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+home: https://github.com/paul-fleischmann-com/udal
+sources:
+  - https://github.com/paul-fleischmann-com/udal
+keywords:
+  - iot
+  - gateway
+  - grpc
+maintainers:
+  - name: Paul Fleischmann
+    url: https://github.com/paul-fleischmann-com

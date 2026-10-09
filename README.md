@@ -42,7 +42,17 @@ docker run --rm -p 50051:50051 -p 8080:8080 \
   ghcr.io/paul-fleischmann-com/udal:latest
 ```
 
-Or download a pre-built binary from the [latest release](https://github.com/paul-fleischmann-com/udal/releases/latest) (Linux amd64 / arm64).
+Or download a pre-built binary from the [latest release](https://github.com/paul-fleischmann-com/udal/releases/latest) (Linux / macOS / Windows, amd64 + arm64).
+
+**Kubernetes (Helm):**
+
+```bash
+helm install udal deployments/helm/udal-gateway \
+  --set gateway.apiKey="myapp:admin:supersecret" \
+  --set gateway.mqttBroker="tcp://mosquitto:1883"
+```
+
+See [`deployments/helm/udal-gateway/`](deployments/helm/udal-gateway/) for the full values reference (TLS, mTLS, persistence, ingress).
 
 ### Register a device and read a property
 
