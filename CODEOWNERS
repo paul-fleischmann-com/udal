@@ -1,24 +1,24 @@
-# Global fallback — paulefl reviews everything not matched below
-* @paulefl
+# Global fallback — both owners review everything not matched below
+* @paulefl @dev-paul-fleischmann
 
 # Gateway & transport adapters
-/code/gateway/ @paulefl
+/code/gateway/ @paulefl @dev-paul-fleischmann
 
 # SDKs
-/code/sdk/go/       @paulefl
-/code/sdk/rust/     @paulefl
-/code/sdk/python/   @paulefl
-/code/sdk/typescript/ @paulefl
+/code/sdk/go/         @paulefl @dev-paul-fleischmann
+/code/sdk/rust/       @paulefl @dev-paul-fleischmann
+/code/sdk/python/     @paulefl @dev-paul-fleischmann
+/code/sdk/typescript/ @paulefl @dev-paul-fleischmann
 
 # Protobuf API (breaking changes need extra attention)
-/code/api/ @paulefl
+/code/api/ @paulefl @dev-paul-fleischmann
 
 # Architecture model
-/architecture.jsonc @paulefl
+/architecture.jsonc @paulefl @dev-paul-fleischmann
 
 # CI / release pipelines
-/.github/ @paulefl
-/.goreleaser.yaml @paulefl
+/.github/ @paulefl @dev-paul-fleischmann
+/.goreleaser.yaml @paulefl @dev-paul-fleischmann
 
 # Documentation
-/docs/ @paulefl
+/docs/ @paulefl @dev-paul-fleischmann
