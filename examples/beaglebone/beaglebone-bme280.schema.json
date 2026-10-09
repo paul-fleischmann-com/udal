@@ -1,31 +1,33 @@
 {
-  "name":        "beaglebone-bme280",
-  "version":     "1.0",
-  "description": "BeagleBone Black — BME280 Sensor (temperature, humidity, pressure) + GPIO USR0 LED",
+  "udal": "1.0",
+  "kind": "DeviceCapability",
+  "metadata": {
+    "name": "beaglebone-bme280",
+    "version": "1.0.0",
+    "description": "BeagleBone Black — BME280 Sensor (temperature, humidity, pressure) + GPIO USR0 LED",
+    "tags": ["sensor", "gpio", "beaglebone"]
+  },
   "properties": {
     "temperature": {
       "type":     "float",
       "unit":     "°C",
-      "readable": true,
-      "writable": false
+      "readOnly": true
     },
     "humidity": {
       "type":     "float",
       "unit":     "%rH",
-      "readable": true,
-      "writable": false
+      "readOnly": true
     },
     "pressure": {
       "type":     "float",
       "unit":     "hPa",
-      "readable": true,
-      "writable": false
+      "readOnly": true
     },
     "gpio_usr0": {
       "type":        "int",
       "description": "USR0 LED (GPIO 60) — 0=off, 1=on",
-      "readable":    true,
-      "writable":    true
+      "min":         0,
+      "max":         1
     }
   }
 }
