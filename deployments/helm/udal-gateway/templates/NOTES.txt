@@ -5,9 +5,9 @@ UDAL Gateway {{ .Chart.AppVersion }} deployed successfully.
   Image:     {{ .Values.image.repository }}:{{ include "udal-gateway.imageTag" . }}
 
 Endpoints (within the cluster):
-  gRPC:    {{ include "udal-gateway.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.service.grpcPort }}
-  HTTP:    {{ include "udal-gateway.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.service.httpPort }}
-  Metrics: {{ include "udal-gateway.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.service.metricsPort }}
+  gRPC:    {{ include "udal-gateway.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.gateway.grpc.port }}
+  HTTP:    {{ include "udal-gateway.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.gateway.http.port }}
+  Metrics: {{ include "udal-gateway.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.gateway.metrics.port }}
 
 Quick health check (from inside the cluster):
   kubectl exec -n {{ .Release.Namespace }} deploy/{{ include "udal-gateway.fullname" . }} \

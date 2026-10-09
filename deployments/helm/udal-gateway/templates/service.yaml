@@ -10,14 +10,14 @@ spec:
     {{- include "udal-gateway.selectorLabels" . | nindent 4 }}
   ports:
     - name: grpc
-      port: {{ .Values.service.grpcPort }}
+      port: {{ .Values.gateway.grpc.port }}
       targetPort: grpc
       protocol: TCP
     - name: http
-      port: {{ .Values.service.httpPort }}
+      port: {{ .Values.gateway.http.port }}
       targetPort: http
       protocol: TCP
     - name: metrics
-      port: {{ .Values.service.metricsPort }}
+      port: {{ .Values.gateway.metrics.port }}
       targetPort: metrics
       protocol: TCP

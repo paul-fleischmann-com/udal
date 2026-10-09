@@ -6,6 +6,10 @@ metadata:
     {{- include "udal-gateway.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.replicaCount }}
+  {{- if .Values.persistence.enabled }}
+  strategy:
+    type: Recreate
+  {{- end }}
   selector:
     matchLabels:
       {{- include "udal-gateway.selectorLabels" . | nindent 6 }}

@@ -58,9 +58,6 @@ persistence:
 
 service:
   type: ClusterIP
-  grpcPort: 50051
-  httpPort: 8080
-  metricsPort: 9090
 
 ingress:
   enabled: false
