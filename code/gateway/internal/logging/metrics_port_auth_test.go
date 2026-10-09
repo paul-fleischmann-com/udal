@@ -61,7 +61,9 @@ func TestMetricsPort_EndpointsReachableWithoutAuth(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s %s: %v", tt.method, tt.path, err)
 		}
-		resp.Body.Close()
+		if err := resp.Body.Close(); err != nil {
+			t.Errorf("%s %s: body close: %v", tt.method, tt.path, err)
+		}
 		if resp.StatusCode != tt.want {
 			t.Errorf("%s %s: got %d, want %d", tt.method, tt.path, resp.StatusCode, tt.want)
 		}
@@ -88,7 +90,9 @@ func TestMetricsPort_NotExposedOnAPIPort(t *testing.T) {
 		if err != nil {
 			t.Fatalf("GET %s: %v", path, err)
 		}
-		resp.Body.Close()
+		if err := resp.Body.Close(); err != nil {
+			t.Errorf("GET %s: body close: %v", path, err)
+		}
 		if resp.StatusCode != http.StatusNotFound {
 			t.Errorf("GET %s on API port: got %d, want 404", path, resp.StatusCode)
 		}
@@ -104,13 +108,21 @@ func TestMetricsPort_BindsOnSeparateAddress(t *testing.T) {
 	if err != nil {
 		t.Fatalf("API listener: %v", err)
 	}
-	defer l1.Close()
+	defer func() {
+		if err := l1.Close(); err != nil {
+			t.Errorf("l1 close: %v", err)
+		}
+	}()
 
 	l2, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("metrics listener: %v", err)
 	}
-	defer l2.Close()
+	defer func() {
+		if err := l2.Close(); err != nil {
+			t.Errorf("l2 close: %v", err)
+		}
+	}()
 
 	if l1.Addr().String() == l2.Addr().String() {
 		t.Error("API and metrics listeners bound to the same address")
