@@ -22,7 +22,7 @@ As the upstream open-source steward, Paul Fleischmann follows this process for a
 | **Within 72 hours** | Incident notification with impact assessment, affected versions and interim mitigations | ENISA EUVDB |
 | **Within 14 days** | Final report with root cause, patch, and CVSS score | ENISA EUVDB + public GitHub Security Advisory |
 
-To register as an integrator and receive early-warning notifications, contact **paul.fleischmann81@gmail.com** with subject `[UDAL] Integrator Registration`.
+To register as an integrator and receive early-warning notifications, contact **paul.fleischmann@paul-fleischmann.com** with subject `[UDAL] Integrator Registration`.
 
 ## Reporting a Vulnerability
 
