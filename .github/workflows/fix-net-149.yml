@@ -1,0 +1,62 @@
+name: Fix golang.org/x/net CVEs (#149)
+
+# One-shot workflow — trigger manually, then delete after the fix PR is merged.
+# Fixes: GO-2026-6617, GO-2026-6612 in golang.org/x/net@v0.59.0
+# Tracked in issue #149
+
+on:
+  workflow_dispatch:
+
+jobs:
+  fix-go:
+    name: Bump golang.org/x/net to v0.60.0
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "stable"
+          cache: true
+
+      - name: Bump golang.org/x/net in gateway
+        working-directory: code/gateway
+        run: |
+          go get golang.org/x/net@v0.60.0
+          go mod tidy
+
+      - name: Bump golang.org/x/net in sdk/go
+        working-directory: code/sdk/go
+        run: |
+          go get golang.org/x/net@v0.60.0
+          go mod tidy
+
+      - name: Bump golang.org/x/net in cli
+        working-directory: code/cli
+        run: |
+          go get golang.org/x/net@v0.60.0
+          go mod tidy
+
+      - name: Create PR
+        uses: peter-evans/create-pull-request@v8
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          branch: fix/golang-x-net-v0.60.0-149
+          commit-message: "#149 - fix - bump golang.org/x/net to v0.60.0 (GO-2026-6617, GO-2026-6612)"
+          title: "#149 - fix - bump golang.org/x/net to v0.60.0 (GO-2026-6617, GO-2026-6612)"
+          body: |
+            Bumps `golang.org/x/net` from v0.59.0 to v0.60.0 in all three Go modules
+            (gateway, sdk/go, cli) to resolve two govulncheck findings:
+
+            - **GO-2026-6617** — https://pkg.go.dev/vuln/GO-2026-6617
+            - **GO-2026-6612** — https://pkg.go.dev/vuln/GO-2026-6612
+
+            Both affect the `http2` package used transitively via gRPC.
+
+            Closes #149
+
+            🤖 Generated with [Claude Code](https://claude.com/claude-code)
