@@ -159,15 +159,26 @@ wsl --install
 # Neustart, dann Debian/Ubuntu-Setup abschließen
 ----
 
-=== BBB-Verbindung in WSL prüfen
+=== BBB-Verbindung in WSL herstellen
 
-Das USB-OTG-Netzwerk (`192.168.7.2`) ist in WSL automatisch über den Windows-Host erreichbar:
+WSL2 verwendet ein eigenes virtuelles Netzwerk — die Route zur BBB (`192.168.7.2`) muss
+einmalig über den Windows-Host hinzugefügt werden:
 
 [source,bash]
 ----
-# In WSL-Terminal:
+# Windows-Host-IP ermitteln
+WINDOWS_IP=$(ip route | grep default | awk '{print $3}')
+echo $WINDOWS_IP   # z.B. 172.28.208.1
+
+# Route zum BBB-Netzwerk via Windows-Host
+sudo ip route add 192.168.7.0/24 via $WINDOWS_IP
+
+# Verbindung testen
 curl http://192.168.7.2:5000/api/v1/bme280
 ----
+
+NOTE: Die Route geht nach einem WSL-Neustart verloren — Befehl dann wiederholen oder in
+`/etc/wsl.conf` automatisieren.
 
 === Demo in WSL starten
 
