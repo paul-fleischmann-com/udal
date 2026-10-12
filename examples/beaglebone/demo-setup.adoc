@@ -53,11 +53,40 @@ scp embedded-armv7 libhardware.so libhardware_rs.so debian@192.168.7.2:/app/
 ssh debian@192.168.7.2 "chmod +x /app/embedded-armv7"
 ----
 
-=== Systemd-Service einrichten (einmalig)
+=== I2C-Bus und Sensor-Adresse ermitteln
+
+Der BME280 kann je nach Verkabelung auf Bus 1 oder 2 und Adresse 0x76 oder 0x77 liegen.
 
 [source,bash]
 ----
-ssh debian@192.168.7.2 "sudo tee /etc/systemd/system/embedded-sw.service" << 'EOF'
+ssh debian@192.168.7.2
+
+# I2C-Modul laden falls nötig
+sudo modprobe i2c-dev
+
+# Verfügbare Busse prüfen
+ls /dev/i2c*
+
+# Alle Busse scannen — BME280 erscheint als 76 oder 77
+sudo apt install i2c-tools -y
+i2cdetect -y -r 0
+i2cdetect -y -r 2
+----
+
+Adressbedeutung:
+
+* `0x76` → SDO-Pin auf GND (Default Seengreat)
+* `0x77` → SDO-Pin auf VCC
+
+Gefundene Werte für den nächsten Schritt notieren (z.B. Bus `2`, Adresse `0x77`).
+
+=== Systemd-Service einrichten (einmalig)
+
+`HW_I2C_BUS` und `HW_I2C_ADDR` auf die im vorherigen Schritt ermittelten Werte setzen:
+
+[source,bash]
+----
+ssh -t debian@192.168.7.2 "sudo tee /etc/systemd/system/embedded-sw.service > /dev/null" << 'EOF'
 [Unit]
 Description=BeagleBone Black Embedded SW
 After=network.target
@@ -68,6 +97,8 @@ User=debian
 WorkingDirectory=/app
 Environment=LD_LIBRARY_PATH=/app
 Environment=HW_BACKEND=auto
+Environment=HW_I2C_BUS=2
+Environment=HW_I2C_ADDR=0x77
 ExecStart=/app/embedded-armv7
 Restart=always
 RestartSec=5
@@ -76,14 +107,18 @@ RestartSec=5
 WantedBy=multi-user.target
 EOF
 
-ssh debian@192.168.7.2 "sudo systemctl daemon-reload && sudo systemctl enable --now embedded-sw"
+ssh -t debian@192.168.7.2 "sudo systemctl daemon-reload && sudo systemctl enable --now embedded-sw"
 ----
+
+NOTE: Falls der I2C-Bus oder die Adresse abweicht, `HW_I2C_BUS` und `HW_I2C_ADDR` entsprechend anpassen.
 
 === API testen
 
 [source,bash]
 ----
 curl http://192.168.7.2:5000/health
+# → {"status":"ok","backend":"rust",...}
+
 curl http://192.168.7.2:5000/api/v1/bme280
 ----
 
@@ -95,9 +130,11 @@ Erwartete Antwort:
   "temperature": 23.45,
   "humidity":    48.72,
   "pressure":    1013.25,
-  "backend":     "c"
+  "backend":     "rust"
 }
 ----
+
+Falls `{"error":"Rust BME280: -2"}`: I2C-Bus oder Adresse falsch → `HW_I2C_BUS`/`HW_I2C_ADDR` in der Service-Datei prüfen und `sudo systemctl restart embedded-sw` ausführen.
 
 == Voraussetzungen prüfen
 
