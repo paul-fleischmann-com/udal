@@ -82,7 +82,7 @@ Gefundene Werte für den nächsten Schritt notieren (z.B. Bus `2`, Adresse `0x77
 
 === Systemd-Service einrichten (einmalig)
 
-`HW_I2C_BUS` und `HW_I2C_ADDR` auf die im vorherigen Schritt ermittelten Werte setzen:
+`HW_I2C` (Pfad zum Bus) und `HW_BME280_ADDR` auf die im vorherigen Schritt ermittelten Werte setzen:
 
 [source,bash]
 ----
@@ -97,8 +97,8 @@ User=debian
 WorkingDirectory=/app
 Environment=LD_LIBRARY_PATH=/app
 Environment=HW_BACKEND=auto
-Environment=HW_I2C_BUS=2
-Environment=HW_I2C_ADDR=0x77
+Environment=HW_I2C=/dev/i2c-2
+Environment=HW_BME280_ADDR=0x77
 ExecStart=/app/embedded-armv7
 Restart=always
 RestartSec=5
@@ -110,7 +110,26 @@ EOF
 ssh -t debian@192.168.7.2 "sudo systemctl daemon-reload && sudo systemctl enable --now embedded-sw"
 ----
 
-NOTE: Falls der I2C-Bus oder die Adresse abweicht, `HW_I2C_BUS` und `HW_I2C_ADDR` entsprechend anpassen.
+Env-Variablen der Go API (aus `pkg/hal/config/config.go`):
+
+[cols="1,2,1"]
+|===
+| Variable | Beschreibung | Default
+
+| `HW_BACKEND`
+| `auto`, `c`, `rust`
+| `auto`
+
+| `HW_I2C`
+| Pfad zum I2C-Device
+| `/dev/i2c-1`
+
+| `HW_BME280_ADDR`
+| I2C-Adresse hex (z.B. `0x76`, `0x77`)
+| `0x76`
+|===
+
+NOTE: Falls Bus oder Adresse abweicht (z.B. Bus 2, Adresse 0x77): `HW_I2C=/dev/i2c-2` und `HW_BME280_ADDR=0x77` setzen.
 
 === API testen
 
