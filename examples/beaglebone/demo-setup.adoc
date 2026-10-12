@@ -93,17 +93,46 @@ chmod +x udal-gateway
 docker pull ghcr.io/paul-fleischmann-com/udal:1.0.0
 ----
 
-=== Bridge-Skript und Schema
+=== Bridge-Skript, Schema und Demo-Script
 
 [source,bash]
 ----
 curl -LO https://raw.githubusercontent.com/paul-fleischmann-com/udal/main/examples/beaglebone/beaglebone-bridge.py
 curl -LO https://raw.githubusercontent.com/paul-fleischmann-com/udal/main/examples/beaglebone/beaglebone-bme280.schema.json
+curl -LO https://raw.githubusercontent.com/paul-fleischmann-com/udal/main/examples/beaglebone/demo.sh
+chmod +x demo.sh
 ----
 
 Kein `pip install` nötig — die Bridge verwendet ausschließlich Python-Stdlib.
 
 == Demo starten
+
+=== Option A — Einzeiler (empfohlen)
+
+`demo.sh` startet Gateway + Bridge, registriert Schema und Device und liest die ersten Properties:
+
+[source,bash]
+----
+./demo.sh
+----
+
+Das Script erwartet `udal-gateway`, `beaglebone-bridge.py`, `beaglebone-bme280.schema.json` und `demo.sh` im selben Verzeichnis.
+Beenden mit kbd:[Ctrl+C] — Gateway und Bridge werden automatisch gestoppt.
+
+.Andere BBB-Adresse (z.B. LAN statt USB-OTG)
+[source,bash]
+----
+BBB_URL=http://192.168.2.55 ./demo.sh
+----
+
+.Logs
+[source,bash]
+----
+tail -f /tmp/udal-gateway.log
+tail -f /tmp/udal-bridge.log
+----
+
+=== Option B — Manuell (3 Terminals)
 
 Drei Terminal-Fenster nebeneinander öffnen.
 
