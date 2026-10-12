@@ -109,15 +109,14 @@ Drei Terminal-Fenster nebeneinander öffnen.
 
 === Terminal 1 — UDAL Gateway
 
+Der Gateway wird ausschließlich über Umgebungsvariablen konfiguriert (keine CLI-Flags außer `-config`).
+
 .Binary
 [source,bash]
 ----
-./udal-gateway \
-  --dev \
-  --bootstrap-api-key demo-key-123 \
-  --grpc-addr :50051 \
-  --http-addr :8080 \
-  --metrics-addr :9090
+UDAL_DEV_INSECURE=true \
+UDAL_BOOTSTRAP_API_KEY=admin:admin:demo-key-123 \
+./udal-gateway
 ----
 
 .Docker
@@ -126,7 +125,7 @@ Drei Terminal-Fenster nebeneinander öffnen.
 docker run --rm \
   -p 50051:50051 -p 8080:8080 -p 9090:9090 \
   -e UDAL_DEV_INSECURE=true \
-  -e UDAL_BOOTSTRAP_API_KEY=demo-key-123 \
+  -e "UDAL_BOOTSTRAP_API_KEY=admin:admin:demo-key-123" \
   ghcr.io/paul-fleischmann-com/udal:1.0.0
 ----
 
