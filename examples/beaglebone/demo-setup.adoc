@@ -213,19 +213,21 @@ curl http://localhost:5001/properties
 .Schema registrieren (einmalig)
 [source,bash]
 ----
-curl -X POST http://localhost:8080/api/v1/capabilities \
-  -H "Authorization: Bearer demo-key-123" \
+# Schema-Feld ist bytes in Protobuf → base64-codiert
+curl -X POST http://localhost:8080/v1/schemas \
+  -H "X-API-Key: demo-key-123" \
   -H "Content-Type: application/json" \
-  -d @beaglebone-bme280.schema.json
+  -d "{\"schema\":\"$(base64 -w0 < beaglebone-bme280.schema.json)\"}"
 ----
 
 .Device registrieren (einmalig)
 [source,bash]
 ----
-curl -X POST http://localhost:8080/api/v1/devices \
-  -H "Authorization: Bearer demo-key-123" \
+curl -X POST http://localhost:8080/v1/devices \
+  -H "X-API-Key: demo-key-123" \
   -H "Content-Type: application/json" \
   -d '{
+    "id":         "beaglebone-01",
     "name":       "beaglebone-01",
     "capability": "beaglebone-bme280@1.0.0",
     "transport":  "http",
@@ -241,16 +243,16 @@ curl -X POST http://localhost:8080/api/v1/devices \
 .Temperatur lesen
 [source,bash]
 ----
-curl http://localhost:8080/api/v1/devices/beaglebone-01/properties/temperature \
-  -H "Authorization: Bearer demo-key-123"
-# → {"float":23.45}
+curl http://localhost:8080/v1/devices/beaglebone-01/properties/temperature \
+  -H "X-API-Key: demo-key-123"
+# → {"value":{"floatVal":23.45}}
 ----
 
-.Alle Properties lesen
+.Alle Devices prüfen
 [source,bash]
 ----
-curl http://localhost:8080/api/v1/devices/beaglebone-01/properties \
-  -H "Authorization: Bearer demo-key-123"
+curl http://localhost:8080/v1/devices \
+  -H "X-API-Key: demo-key-123"
 ----
 
 == GPIO direkt schreiben
