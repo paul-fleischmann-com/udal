@@ -10,17 +10,20 @@
 #   GET /properties/{path}   → {"float":…} | {"int":…}
 #
 # Usage:
-#   python3 beaglebone-bridge.py [--bbb-url http://192.168.7.2:5000] [--port 5001]
+#   python3 beaglebone-bridge.py [--bbb-url http://192.168.2.55] [--port 5001]
 #
 # Then register the device with:
 #   labels["http.endpoint"] = "http://localhost:5001"
+
+from __future__ import annotations
 
 import argparse
 import json
 import urllib.request
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
-DEFAULT_BBB_URL = "http://192.168.7.2:5000"
+# LAN address (USB-OTG fallback: http://192.168.7.2:5000)
+DEFAULT_BBB_URL = "http://192.168.2.55"
 DEFAULT_PORT    = 5001
 
 
@@ -34,6 +37,7 @@ def bbb_url(args) -> str:
 
 
 def all_properties(bbb: str) -> dict:
+    # Two sequential calls — acceptable for a demo bridge; parallelize if latency matters
     bme  = fetch_json(f"{bbb}/api/v1/bme280")
     gpio = fetch_json(f"{bbb}/api/v1/gpio/60")
     return {
