@@ -132,6 +132,33 @@ tail -f /tmp/udal-bridge.log
 
 === Option B — Manuell (3 Terminals)
 
+=== Option A — Einzeiler (empfohlen)
+
+`demo.sh` startet Gateway + Bridge, registriert Schema und Device und liest die ersten Properties:
+
+[source,bash]
+----
+./demo.sh
+----
+
+Das Script erwartet `udal-gateway`, `beaglebone-bridge.py`, `beaglebone-bme280.schema.json` und `demo.sh` im selben Verzeichnis.
+Beenden mit kbd:[Ctrl+C] — Gateway und Bridge werden automatisch gestoppt.
+
+.Andere BBB-Adresse (z.B. LAN statt USB-OTG)
+[source,bash]
+----
+BBB_URL=http://192.168.2.55 ./demo.sh
+----
+
+.Logs
+[source,bash]
+----
+tail -f /tmp/udal-gateway.log
+tail -f /tmp/udal-bridge.log
+----
+
+=== Option B — Manuell (3 Terminals)
+
 Drei Terminal-Fenster nebeneinander öffnen.
 
 === Terminal 1 — UDAL Gateway
