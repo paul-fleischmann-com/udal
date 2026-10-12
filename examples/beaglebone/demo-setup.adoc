@@ -26,6 +26,79 @@ und ist unter `192.168.7.2:5000` erreichbar.
 | Bridge        | `localhost:5001`
 |===
 
+== BeagleBone Black einrichten
+
+Dieser Abschnitt beschreibt die einmalige Vorbereitung des BeagleBone Black —
+Go API deployen damit `192.168.7.2:5000` antwortet.
+
+=== Go API deployen (Release v1.1.1)
+
+[source,bash]
+----
+# Binaries vom beaglebone_black-Release herunterladen
+mkdir -p /tmp/bbb-deploy && cd /tmp/bbb-deploy
+
+gh release download v1.1.1 \
+  --repo paul-fleischmann-com/beaglebone_black \
+  --pattern "embedded-armv7" \
+  --pattern "libhardware.so" \
+  --pattern "libhardware_rs.so"
+
+# App-Verzeichnis auf BBB anlegen
+ssh debian@192.168.7.2 "sudo mkdir -p /app && sudo chown debian:debian /app"
+
+# Binaries auf BBB kopieren
+scp embedded-armv7 libhardware.so libhardware_rs.so debian@192.168.7.2:/app/
+
+ssh debian@192.168.7.2 "chmod +x /app/embedded-armv7"
+----
+
+=== Systemd-Service einrichten (einmalig)
+
+[source,bash]
+----
+ssh debian@192.168.7.2 "sudo tee /etc/systemd/system/embedded-sw.service" << 'EOF'
+[Unit]
+Description=BeagleBone Black Embedded SW
+After=network.target
+
+[Service]
+Type=simple
+User=debian
+WorkingDirectory=/app
+Environment=LD_LIBRARY_PATH=/app
+Environment=HW_BACKEND=auto
+ExecStart=/app/embedded-armv7
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+ssh debian@192.168.7.2 "sudo systemctl daemon-reload && sudo systemctl enable --now embedded-sw"
+----
+
+=== API testen
+
+[source,bash]
+----
+curl http://192.168.7.2:5000/health
+curl http://192.168.7.2:5000/api/v1/bme280
+----
+
+Erwartete Antwort:
+
+[source,json]
+----
+{
+  "temperature": 23.45,
+  "humidity":    48.72,
+  "pressure":    1013.25,
+  "backend":     "c"
+}
+----
+
 == Voraussetzungen prüfen
 
 === Architektur ermitteln
@@ -71,6 +144,52 @@ Falls nicht vorhanden:
 ----
 sudo apt install python3
 ----
+
+== Windows-Setup (WSL)
+
+`demo.sh` und `udal-gateway` sind Linux-Binaries — unter Windows WSL verwenden.
+
+=== WSL installieren (einmalig)
+
+In PowerShell als Administrator:
+
+[source,powershell]
+----
+wsl --install
+# Neustart, dann Debian/Ubuntu-Setup abschließen
+----
+
+=== BBB-Verbindung in WSL prüfen
+
+Das USB-OTG-Netzwerk (`192.168.7.2`) ist in WSL automatisch über den Windows-Host erreichbar:
+
+[source,bash]
+----
+# In WSL-Terminal:
+curl http://192.168.7.2:5000/api/v1/bme280
+----
+
+=== Demo in WSL starten
+
+[source,bash]
+----
+# In WSL-Terminal:
+mkdir -p ~/udal_demo && cd ~/udal_demo
+
+curl -LO https://github.com/paul-fleischmann-com/udal/releases/download/v1.0.0/udal-gateway_1.0.0_linux_amd64.tar.gz
+tar xzf udal-gateway_1.0.0_linux_amd64.tar.gz
+chmod +x udal-gateway
+
+curl -LO https://raw.githubusercontent.com/paul-fleischmann-com/udal/main/examples/beaglebone/beaglebone-bridge.py
+curl -LO https://raw.githubusercontent.com/paul-fleischmann-com/udal/main/examples/beaglebone/beaglebone-bme280.schema.json
+curl -LO https://raw.githubusercontent.com/paul-fleischmann-com/udal/main/examples/beaglebone/demo.sh
+chmod +x demo.sh
+
+./demo.sh
+----
+
+NOTE: Gateway und Bridge laufen in WSL — REST-Endpunkte (`localhost:8080`, `localhost:5001`)
+sind von Windows aus ebenfalls erreichbar.
 
 == Download
 
