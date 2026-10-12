@@ -74,29 +74,19 @@ sudo apt install python3
 
 == Download
 
-=== UDAL Gateway (Binary)
+Alle Dateien in ein gemeinsames Verzeichnis herunterladen (z.B. `~/udal_demo`):
 
 [source,bash]
 ----
-# amd64 (Standard)
+# 1 — UDAL Gateway Binary (amd64)
 curl -LO https://github.com/paul-fleischmann-com/udal/releases/download/v1.0.0/udal-gateway_1.0.0_linux_amd64.tar.gz
 tar xzf udal-gateway_1.0.0_linux_amd64.tar.gz
 chmod +x udal-gateway
 
-# arm64 (falls uname -m → aarch64)
+# arm64 (falls uname -m → aarch64):
 # curl -LO https://github.com/paul-fleischmann-com/udal/releases/download/v1.0.0/udal-gateway_1.0.0_linux_arm64.tar.gz
-----
 
-.Alternative: Docker
-[source,bash]
-----
-docker pull ghcr.io/paul-fleischmann-com/udal:1.0.0
-----
-
-=== Bridge-Skript, Schema und Demo-Script
-
-[source,bash]
-----
+# 2 — Bridge, Schema und Demo-Script
 curl -LO https://raw.githubusercontent.com/paul-fleischmann-com/udal/main/examples/beaglebone/beaglebone-bridge.py
 curl -LO https://raw.githubusercontent.com/paul-fleischmann-com/udal/main/examples/beaglebone/beaglebone-bme280.schema.json
 curl -LO https://raw.githubusercontent.com/paul-fleischmann-com/udal/main/examples/beaglebone/demo.sh
@@ -104,6 +94,14 @@ chmod +x demo.sh
 ----
 
 Kein `pip install` nötig — die Bridge verwendet ausschließlich Python-Stdlib.
+
+.Alternative: Docker (kein Binary-Download nötig)
+[source,bash]
+----
+docker pull ghcr.io/paul-fleischmann-com/udal:1.0.0
+----
+
+NOTE: Bei Docker muss Option B (manueller Start) verwendet werden, da `demo.sh` das lokale Binary erwartet.
 
 == Demo starten
 
