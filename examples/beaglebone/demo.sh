@@ -39,18 +39,8 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-api() {
-  local method="$1" path="$2" body="${3:-}"
-  local url="http://localhost:$GATEWAY_HTTP$path"
-  if [[ -n "$body" ]]; then
-    curl -sf -X "$method" "$url" \
-      -H "Authorization: Bearer $API_KEY" \
-      -H "Content-Type: application/json" \
-      -d "$body"
-  else
-    curl -sf "$url" -H "Authorization: Bearer $API_KEY"
-  fi
-}
+gw_get()  { curl -sf  "http://localhost:$GATEWAY_HTTP$1" -H "X-API-Key: $API_KEY"; }
+gw_post() { curl -sf -X POST "http://localhost:$GATEWAY_HTTP$1" -H "X-API-Key: $API_KEY" -H "Content-Type: application/json" -d "$2"; }
 
 # ── 1. Voraussetzungen ────────────────────────────────────────────────────────
 step "Voraussetzungen prüfen"
@@ -64,7 +54,7 @@ ok "udal-gateway, python3, bridge, schema — alles vorhanden"
 step "BBB-Verbindung testen ($BBB_URL)"
 BBB_DATA=$(curl -sf "$BBB_URL/api/v1/bme280") \
   || fail "BBB nicht erreichbar — USB-Kabel prüfen oder: BBB_URL=http://... $0"
-TEMP=$(echo "$BBB_DATA" | python3 -c "import json,sys; print(json.load(sys.stdin)['temperature'])" 2>/dev/null || echo "?")
+TEMP=$(echo "$BBB_DATA" | python3 -c "import json,sys; print(round(json.load(sys.stdin)['temperature'],2))" 2>/dev/null || echo "?")
 ok "BBB antwortet — aktuelle Temperatur: ${TEMP}°C"
 
 # ── 3. Gateway starten ────────────────────────────────────────────────────────
@@ -82,8 +72,7 @@ for i in $(seq 1 20); do
     break
   fi
   if [[ $i -eq 20 ]]; then
-    echo "--- Gateway-Log ---"
-    tail -20 /tmp/udal-gateway.log
+    echo "--- Gateway-Log ---"; tail -20 /tmp/udal-gateway.log
     fail "Gateway nicht gestartet nach 10 s"
   fi
 done
@@ -104,30 +93,33 @@ for i in $(seq 1 10); do
     break
   fi
   if [[ $i -eq 10 ]]; then
-    echo "--- Bridge-Log ---"
-    tail -10 /tmp/udal-bridge.log
+    echo "--- Bridge-Log ---"; tail -10 /tmp/udal-bridge.log
     fail "Bridge nicht gestartet nach 5 s"
   fi
 done
 
 # ── 5. Capability-Schema registrieren ────────────────────────────────────────
-step "Capability-Schema registrieren"
-RESP=$(curl -s -X POST "http://localhost:$GATEWAY_HTTP/api/v1/capabilities" \
-  -H "Authorization: Bearer $API_KEY" \
+step "Capability-Schema registrieren  (POST /v1/schemas)"
+# bytes-Feld erwartet base64-codierten JSON-String
+SCHEMA_B64=$(base64 -w0 < "$SCRIPT_DIR/beaglebone-bme280.schema.json")
+RESP=$(curl -s -X POST "http://localhost:$GATEWAY_HTTP/v1/schemas" \
+  -H "X-API-Key: $API_KEY" \
   -H "Content-Type: application/json" \
-  -d @"$SCRIPT_DIR/beaglebone-bme280.schema.json")
-if echo "$RESP" | python3 -c "import json,sys; d=json.load(sys.stdin); exit(0 if 'name' in d or d.get('code')==6 else 1)" 2>/dev/null; then
-  ok "Schema beaglebone-bme280@1.0.0 registriert"
+  -d "{\"schema\":\"$SCHEMA_B64\"}")
+NAME=$(echo "$RESP" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('schema',{}).get('name','?')+'@'+d.get('schema',{}).get('version','?'))" 2>/dev/null || echo "")
+if [[ -n "$NAME" && "$NAME" != "?@?" ]]; then
+  ok "Schema $NAME registriert"
 else
   warn "Schema-Antwort: $RESP"
 fi
 
 # ── 6. Device registrieren ────────────────────────────────────────────────────
-step "Device registrieren"
-RESP=$(curl -s -X POST "http://localhost:$GATEWAY_HTTP/api/v1/devices" \
-  -H "Authorization: Bearer $API_KEY" \
+step "Device registrieren  (POST /v1/devices)"
+RESP=$(curl -s -X POST "http://localhost:$GATEWAY_HTTP/v1/devices" \
+  -H "X-API-Key: $API_KEY" \
   -H "Content-Type: application/json" \
   -d "{
+    \"id\":         \"$DEVICE\",
     \"name\":       \"$DEVICE\",
     \"capability\": \"beaglebone-bme280@1.0.0\",
     \"transport\":  \"http\",
@@ -137,9 +129,9 @@ RESP=$(curl -s -X POST "http://localhost:$GATEWAY_HTTP/api/v1/devices" \
       \"hw\":                 \"beaglebone-black\"
     }
   }")
-if echo "$RESP" | python3 -c "import json,sys; d=json.load(sys.stdin); exit(0 if 'id' in d or d.get('code')==6 else 1)" 2>/dev/null; then
-  DEVICE_ID=$(echo "$RESP" | python3 -c "import json,sys; print(json.load(sys.stdin).get('id','(bereits vorhanden)'))" 2>/dev/null)
-  ok "Device $DEVICE registriert  — ID: $DEVICE_ID"
+DEV_ID=$(echo "$RESP" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('device',{}).get('id') or d.get('id',''))" 2>/dev/null || echo "")
+if [[ -n "$DEV_ID" ]]; then
+  ok "Device registriert  — ID: $DEV_ID"
 else
   warn "Device-Antwort: $RESP"
 fi
@@ -148,21 +140,19 @@ fi
 step "Warte auf ersten HTTP-Adapter-Poll (5 s)..."
 sleep 6
 
-step "Properties lesen via UDAL Gateway"
-PROPS=$(curl -s "http://localhost:$GATEWAY_HTTP/api/v1/devices/$DEVICE/properties" \
-  -H "Authorization: Bearer $API_KEY")
-echo "$PROPS" | python3 -c "
+step "Properties lesen  (GET /v1/devices/$DEVICE/properties/{path})"
+for PROP in temperature humidity pressure gpio_usr0; do
+  RAW=$(curl -s "http://localhost:$GATEWAY_HTTP/v1/devices/$DEVICE/properties/$PROP" \
+    -H "X-API-Key: $API_KEY")
+  VAL=$(echo "$RAW" | python3 -c "
 import json, sys
-try:
-    d = json.load(sys.stdin)
-    for k, v in d.items():
-        val = list(v.values())[0]
-        unit = {'temperature': '°C', 'humidity': '%rH', 'pressure': 'hPa'}.get(k, '')
-        print(f'  {k:<14} {val} {unit}')
-except Exception as e:
-    print('  (parse error)', e)
-    print(sys.stdin.read())
-" 2>/dev/null || echo "  Rohdaten: $PROPS"
+d = json.load(sys.stdin)
+v = d.get('value', {})
+print(list(v.values())[0] if v else '(leer)')
+" 2>/dev/null || echo "$RAW")
+  UNIT=$(python3 -c "print({'temperature':'°C','humidity':'%rH','pressure':'hPa'}.get('$PROP',''))" 2>/dev/null)
+  printf "  %-14s %s %s\n" "$PROP" "$VAL" "$UNIT"
+done
 
 # ── 8. Demo läuft ─────────────────────────────────────────────────────────────
 echo ""
@@ -175,10 +165,10 @@ info "Bridge   http://localhost:$BRIDGE_PORT/properties"
 info "Logs     /tmp/udal-gateway.log   /tmp/udal-bridge.log"
 echo ""
 echo -e "${CYAN}  Befehle:${NC}"
-echo "  Alle Properties:  curl http://localhost:$GATEWAY_HTTP/api/v1/devices/$DEVICE/properties -H 'Authorization: Bearer $API_KEY'"
-echo "  Temperatur:       curl http://localhost:$GATEWAY_HTTP/api/v1/devices/$DEVICE/properties/temperature -H 'Authorization: Bearer $API_KEY'"
-echo "  GPIO USR0 an:     curl -X POST $BBB_URL/api/v1/gpio/60 -H 'Content-Type: application/json' -d '{\"value\":1}'"
-echo "  GPIO USR0 aus:    curl -X POST $BBB_URL/api/v1/gpio/60 -H 'Content-Type: application/json' -d '{\"value\":0}'"
+echo "  Temperatur:    curl http://localhost:$GATEWAY_HTTP/v1/devices/$DEVICE/properties/temperature -H 'X-API-Key: $API_KEY'"
+echo "  Alle Devices:  curl http://localhost:$GATEWAY_HTTP/v1/devices -H 'X-API-Key: $API_KEY'"
+echo "  GPIO USR0 an:  curl -X POST $BBB_URL/api/v1/gpio/60 -H 'Content-Type: application/json' -d '{\"value\":1}'"
+echo "  GPIO USR0 aus: curl -X POST $BBB_URL/api/v1/gpio/60 -H 'Content-Type: application/json' -d '{\"value\":0}'"
 echo ""
 echo "  Beenden: Ctrl+C"
 echo ""
