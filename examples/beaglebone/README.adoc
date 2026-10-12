@@ -116,17 +116,17 @@ curl http://192.168.7.2:5000/api/v1/bme280
 
 == UDAL Gateway starten
 
-WARNING: `--dev` deaktiviert TLS — nur für lokale Demo-Umgebungen.
+WARNING: `UDAL_DEV_INSECURE=true` deaktiviert TLS — nur für lokale Demo-Umgebungen.
+
+Der Gateway wird über Umgebungsvariablen konfiguriert (keine CLI-Flags außer `-config`). +
+`UDAL_BOOTSTRAP_API_KEY` hat das Format `subject:role:rawkey` (Rollen: `admin`, `operator`, `reader`, `device`).
 
 .Binary
 [source,bash]
 ----
-./udal-gateway \
-  --dev \
-  --bootstrap-api-key demo-key-123 \
-  --grpc-addr :50051 \
-  --http-addr :8080 \
-  --metrics-addr :9090
+UDAL_DEV_INSECURE=true \
+UDAL_BOOTSTRAP_API_KEY=admin:admin:demo-key-123 \
+./udal-gateway
 ----
 
 .Docker
@@ -135,7 +135,7 @@ WARNING: `--dev` deaktiviert TLS — nur für lokale Demo-Umgebungen.
 docker run --rm \
   -p 50051:50051 -p 8080:8080 -p 9090:9090 \
   -e UDAL_DEV_INSECURE=true \
-  -e UDAL_BOOTSTRAP_API_KEY=demo-key-123 \
+  -e "UDAL_BOOTSTRAP_API_KEY=admin:admin:demo-key-123" \
   ghcr.io/paul-fleischmann-com/udal:1.0.0
 ----
 
