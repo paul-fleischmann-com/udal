@@ -22,8 +22,8 @@ import json
 import urllib.request
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
-# LAN address (USB-OTG fallback: http://192.168.7.2:5000)
-DEFAULT_BBB_URL = "http://192.168.2.55"
+# USB-OTG address (LAN alternative: http://192.168.2.55 via Nginx port 80)
+DEFAULT_BBB_URL = "http://192.168.7.2:5000"
 DEFAULT_PORT    = 5001
 
 

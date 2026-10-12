@@ -1,0 +1,246 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Paul Fleischmann
+= BeagleBone Demo — Setup auf dem Demo-Rechner (Debian)
+:toc: left
+:toc-title: Inhalt
+:toclevels: 2
+:icons: font
+:source-highlighter: rouge
+:rouge-style: github
+:experimental:
+:sectnums:
+
+// M5 · #46 · Schnell-Setup für den Demo-Rechner (192.168.2.55, Debian)
+
+== Überblick
+
+Dieses Dokument beschreibt die einmalige Vorbereitung des Demo-Rechners.
+Alle Komponenten laufen lokal — der BeagleBone Black hängt via USB-OTG dran
+und ist unter `192.168.7.2:5000` erreichbar.
+
+[cols="1,3"]
+|===
+| Demo-Rechner  | Debian (192.168.2.55)
+| BeagleBone    | USB-OTG → `192.168.7.2:5000`
+| UDAL Gateway  | `localhost:8080` (REST) · `localhost:50051` (gRPC)
+| Bridge        | `localhost:5001`
+|===
+
+== Voraussetzungen prüfen
+
+=== Architektur ermitteln
+
+[source,bash]
+----
+uname -m
+# x86_64 → amd64   (Standard-Laptop/PC)
+# aarch64 → arm64  (z.B. Raspberry Pi, ARM-Server)
+----
+
+=== BBB-Verbindung testen
+
+[source,bash]
+----
+curl http://192.168.7.2:5000/api/v1/bme280
+----
+
+[source,json]
+----
+{
+  "temperature": 23.45,
+  "humidity":    48.72,
+  "pressure":    1013.25,
+  "altitude":    89.3,
+  "timestamp":   "2026-10-09T09:00:00Z",
+  "backend":     "c"
+}
+----
+
+Wenn der Aufruf hängt oder fehlschlägt: USB-Kabel prüfen, BBB neu starten.
+
+=== Python 3.9+ prüfen
+
+[source,bash]
+----
+python3 --version
+----
+
+Falls nicht vorhanden:
+
+[source,bash]
+----
+sudo apt install python3
+----
+
+== Download
+
+=== UDAL Gateway (Binary)
+
+[source,bash]
+----
+# amd64 (Standard)
+curl -LO https://github.com/paul-fleischmann-com/udal/releases/download/v1.0.0/udal-gateway_1.0.0_linux_amd64.tar.gz
+tar xzf udal-gateway_1.0.0_linux_amd64.tar.gz
+chmod +x udal-gateway
+
+# arm64 (falls uname -m → aarch64)
+# curl -LO https://github.com/paul-fleischmann-com/udal/releases/download/v1.0.0/udal-gateway_1.0.0_linux_arm64.tar.gz
+----
+
+.Alternative: Docker
+[source,bash]
+----
+docker pull ghcr.io/paul-fleischmann-com/udal:1.0.0
+----
+
+=== Bridge-Skript und Schema
+
+[source,bash]
+----
+curl -LO https://raw.githubusercontent.com/paul-fleischmann-com/udal/main/examples/beaglebone/beaglebone-bridge.py
+curl -LO https://raw.githubusercontent.com/paul-fleischmann-com/udal/main/examples/beaglebone/beaglebone-bme280.schema.json
+----
+
+Kein `pip install` nötig — die Bridge verwendet ausschließlich Python-Stdlib.
+
+== Demo starten
+
+Drei Terminal-Fenster nebeneinander öffnen.
+
+=== Terminal 1 — UDAL Gateway
+
+.Binary
+[source,bash]
+----
+./udal-gateway \
+  --dev \
+  --bootstrap-api-key demo-key-123 \
+  --grpc-addr :50051 \
+  --http-addr :8080 \
+  --metrics-addr :9090
+----
+
+.Docker
+[source,bash]
+----
+docker run --rm \
+  -p 50051:50051 -p 8080:8080 -p 9090:9090 \
+  -e UDAL_DEV_INSECURE=true \
+  -e UDAL_BOOTSTRAP_API_KEY=demo-key-123 \
+  ghcr.io/paul-fleischmann-com/udal:1.0.0
+----
+
+Gateway-Health prüfen:
+
+[source,bash]
+----
+curl http://localhost:9090/health
+# → {"status":"ready"}
+----
+
+=== Terminal 2 — Bridge
+
+[source,bash]
+----
+python3 beaglebone-bridge.py \
+  --bbb-url http://192.168.7.2:5000 \
+  --port 5001
+----
+
+Bridge testen:
+
+[source,bash]
+----
+curl http://localhost:5001/properties
+# → {"temperature":{"float":23.45},"humidity":{"float":48.72},...}
+----
+
+=== Terminal 3 — Setup & Demo
+
+.Schema registrieren (einmalig)
+[source,bash]
+----
+curl -X POST http://localhost:8080/api/v1/capabilities \
+  -H "Authorization: Bearer demo-key-123" \
+  -H "Content-Type: application/json" \
+  -d @beaglebone-bme280.schema.json
+----
+
+.Device registrieren (einmalig)
+[source,bash]
+----
+curl -X POST http://localhost:8080/api/v1/devices \
+  -H "Authorization: Bearer demo-key-123" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name":       "beaglebone-01",
+    "capability": "beaglebone-bme280@1.0.0",
+    "transport":  "http",
+    "labels": {
+      "http.endpoint":      "http://localhost:5001",
+      "http.poll_interval": "5s",
+      "location":           "desk",
+      "hw":                 "beaglebone-black"
+    }
+  }'
+----
+
+.Temperatur lesen
+[source,bash]
+----
+curl http://localhost:8080/api/v1/devices/beaglebone-01/properties/temperature \
+  -H "Authorization: Bearer demo-key-123"
+# → {"float":23.45}
+----
+
+.Alle Properties lesen
+[source,bash]
+----
+curl http://localhost:8080/api/v1/devices/beaglebone-01/properties \
+  -H "Authorization: Bearer demo-key-123"
+----
+
+== GPIO direkt schreiben
+
+Da `SetProperty` für den HTTP Adapter noch nicht implementiert ist,
+GPIO direkt an die BBB-API:
+
+[source,bash]
+----
+# USR0 LED einschalten
+curl -X POST http://192.168.7.2:5000/api/v1/gpio/60 \
+  -H "Content-Type: application/json" \
+  -d '{"value": 1}'
+
+# USR0 LED ausschalten
+curl -X POST http://192.168.7.2:5000/api/v1/gpio/60 \
+  -H "Content-Type: application/json" \
+  -d '{"value": 0}'
+----
+
+== Troubleshooting
+
+[cols="1,2,2"]
+|===
+| Problem | Ursache | Fix
+
+| `curl: (7) Failed to connect to 192.168.7.2`
+| BBB nicht via USB verbunden oder USB-OTG-Netzwerk nicht aktiv
+| USB-Kabel prüfen, `ip addr show usb0` auf BBB
+
+| Gateway startet nicht: `bind: address already in use`
+| Port 8080/50051/9090 belegt
+| `lsof -i :8080` → Prozess beenden
+
+| Bridge: `502 Bad Gateway` bei `/properties`
+| BBB-API nicht erreichbar
+| `curl http://192.168.7.2:5000/health` testen
+
+| Device-Registrierung: `capability not found`
+| Schema noch nicht registriert
+| Schema-POST zuerst ausführen
+
+| `{"float":0}` für gpio_usr0
+| BBB liefert GPIO-Wert 0 (LED aus) — korrekt
+| LED einschalten und erneut lesen
+|===

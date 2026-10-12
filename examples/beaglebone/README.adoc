@@ -21,15 +21,16 @@ Demonstriert wie ein *BeagleBone Black* (BME280-Sensor, GPIO) über den UDAL HTT
 |===
 | Weg | HTTP Adapter (Polling) — Weg 1 aus #45
 | UDAL-Version | v1.0.0
-| BeagleBone IP | `192.168.2.55` (LAN, Port 80 via Nginx) · USB-OTG Fallback: `192.168.7.2:5000`
+| Demo-Rechner | `192.168.2.55` (Gateway + Bridge laufen hier)
+| BeagleBone IP | `192.168.7.2:5000` (USB-OTG, Go API direkt) · LAN-Alternative: `192.168.2.55` via Nginx Port 80
 | Poll-Intervall | 5 s (konfigurierbar)
 |===
 
 .Architektur
 ....
-BeagleBone Black        Bridge (Laptop)       UDAL Gateway         Client
-:80/Nginx → :5000  <-->  :5001 /properties  <--  HTTP Adapter  <-->  gRPC :50051
-BME280 · GPIO            beaglebone-bridge.py    pollt :5001          REST :8080
+BeagleBone Black    Bridge (192.168.2.55)    UDAL Gateway         Client
+USB-OTG :5000  <-->  :5001 /properties  <--  HTTP Adapter  <-->  gRPC :50051
+BME280 · GPIO        beaglebone-bridge.py     pollt :5001          REST :8080
 ....
 
 NOTE: Der UDAL HTTP Adapter erwartet Endpunkte nach der *UDAL HTTP Device Convention*
@@ -43,22 +44,22 @@ kein Code auf dem BeagleBone selbst nötig.
 NOTE: `SetProperty` für `http`-Transport-Devices ist in dieser UDAL-Version noch nicht
 implementiert (HTTP Adapter, Issue #24 AC: nur Read-Pfad).
 Die `gpio_usr0`-Property ist lesbar; zum Schreiben kann man direkt an die BeagleBone-API
-schicken: `POST http://192.168.2.55/api/v1/gpio/60` — oder Weg 2 (#47, Go SDK) abwarten.
+schicken: `POST http://192.168.7.2:5000/api/v1/gpio/60` — oder Weg 2 (#47, Go SDK) abwarten.
 
 == Voraussetzungen & Netzwerk
 
 === Verbindung prüfen
 
-BeagleBone Black ist über LAN unter `192.168.2.55` erreichbar.
-USB-OTG-Fallback (ohne Router): `192.168.7.2`.
+BeagleBone Black ist via USB-OTG unter `192.168.7.2:5000` erreichbar (Go API direkt, kein Nginx).
+LAN-Alternative (mit Router, Nginx Port 80): `192.168.2.55`.
 
 [source,bash]
 ----
-# SSH-Verbindung (Passwort: temppwd)
-ssh debian@192.168.2.55
+# SSH-Verbindung via USB-OTG (Passwort: temppwd)
+ssh debian@192.168.7.2
 
 # Ping-Check
-ping 192.168.2.55
+ping 192.168.7.2
 ----
 
 === UDAL v1.0.0 herunterladen
@@ -82,7 +83,7 @@ Port 5000 (Go REST API) läuft intern auf dem BBB und ist von außen nur über d
 [source,bash]
 ----
 # Health-Check
-curl http://192.168.2.55/health
+curl http://192.168.7.2:5000/health
 ----
 
 [source,json]
@@ -98,7 +99,7 @@ curl http://192.168.2.55/health
 [source,bash]
 ----
 # BME280-Sensor auslesen
-curl http://192.168.2.55/api/v1/bme280
+curl http://192.168.7.2:5000/api/v1/bme280
 ----
 
 [source,json]
@@ -154,7 +155,7 @@ Sie läuft auf dem Entwicklungsrechner (oder einem Proxy-Host im selben Netz).
 ----
 # Python 3.9+ — keine externen Abhängigkeiten
 python3 examples/beaglebone/beaglebone-bridge.py \
-  --bbb-url http://192.168.2.55 \
+  --bbb-url http://192.168.7.2:5000 \
   --port 5001
 ----
 
@@ -326,12 +327,12 @@ GPIO-Schreiben direkt an die BeagleBone-API:
 [source,bash]
 ----
 # LED einschalten
-curl -X POST http://192.168.2.55/api/v1/gpio/60 \
+curl -X POST http://192.168.7.2:5000/api/v1/gpio/60 \
   -H "Content-Type: application/json" \
   -d '{"value": 1}'
 
 # LED ausschalten
-curl -X POST http://192.168.2.55/api/v1/gpio/60 \
+curl -X POST http://192.168.7.2:5000/api/v1/gpio/60 \
   -H "Content-Type: application/json" \
   -d '{"value": 0}'
 ----
@@ -358,7 +359,7 @@ _Screen: zwei Terminal-Fenster nebeneinander_
 
 | 3
 | 1:30 – 2:30
-| *BeagleBone zeigen:* Hardware kurz zeigen, SSH-Verbindung, `curl http://192.168.2.55/api/v1/bme280` — echte Messwerte. +
+| *BeagleBone zeigen:* Hardware kurz zeigen, SSH-Verbindung, `curl http://192.168.7.2:5000/api/v1/bme280` — echte Messwerte. +
 _Screen: Split — Hardware-Kamera + Terminal_
 
 | 4
@@ -372,7 +373,7 @@ _Screen: Split — Hardware-Kamera + Terminal_
 
 | 6
 | 5:00 – 6:00
-| *GPIO-Demo:* `POST http://192.168.2.55/api/v1/gpio/60` → USR0 LED leuchtet. +
+| *GPIO-Demo:* `POST http://192.168.7.2:5000/api/v1/gpio/60` → USR0 LED leuchtet. +
 _Screen: Terminal + Hardware-Kamera gleichzeitig_
 
 | 7
