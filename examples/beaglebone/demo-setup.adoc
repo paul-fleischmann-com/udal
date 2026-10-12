@@ -26,6 +26,135 @@ und ist unter `192.168.7.2:5000` erreichbar.
 | Bridge        | `localhost:5001`
 |===
 
+== BeagleBone Black einrichten
+
+Dieser Abschnitt beschreibt die einmalige Vorbereitung des BeagleBone Black —
+Go API deployen damit `192.168.7.2:5000` antwortet.
+
+=== Go API deployen (Release v1.1.1)
+
+[source,bash]
+----
+# Binaries vom beaglebone_black-Release herunterladen
+mkdir -p /tmp/bbb-deploy && cd /tmp/bbb-deploy
+
+gh release download v1.1.1 \
+  --repo paul-fleischmann-com/beaglebone_black \
+  --pattern "embedded-armv7" \
+  --pattern "libhardware.so" \
+  --pattern "libhardware_rs.so"
+
+# App-Verzeichnis auf BBB anlegen
+ssh debian@192.168.7.2 "sudo mkdir -p /app && sudo chown debian:debian /app"
+
+# Binaries auf BBB kopieren
+scp embedded-armv7 libhardware.so libhardware_rs.so debian@192.168.7.2:/app/
+
+ssh debian@192.168.7.2 "chmod +x /app/embedded-armv7"
+----
+
+=== I2C-Bus und Sensor-Adresse ermitteln
+
+Der BME280 kann je nach Verkabelung auf Bus 1 oder 2 und Adresse 0x76 oder 0x77 liegen.
+
+[source,bash]
+----
+ssh debian@192.168.7.2
+
+# I2C-Modul laden falls nötig
+sudo modprobe i2c-dev
+
+# Verfügbare Busse prüfen
+ls /dev/i2c*
+
+# Alle Busse scannen — BME280 erscheint als 76 oder 77
+sudo apt install i2c-tools -y
+i2cdetect -y -r 0
+i2cdetect -y -r 2
+----
+
+Adressbedeutung:
+
+* `0x76` → SDO-Pin auf GND (Default Seengreat)
+* `0x77` → SDO-Pin auf VCC
+
+Gefundene Werte für den nächsten Schritt notieren (z.B. Bus `2`, Adresse `0x77`).
+
+=== Systemd-Service einrichten (einmalig)
+
+`HW_I2C` (Pfad zum Bus) und `HW_BME280_ADDR` auf die im vorherigen Schritt ermittelten Werte setzen:
+
+[source,bash]
+----
+ssh -t debian@192.168.7.2 "sudo tee /etc/systemd/system/embedded-sw.service > /dev/null" << 'EOF'
+[Unit]
+Description=BeagleBone Black Embedded SW
+After=network.target
+
+[Service]
+Type=simple
+User=debian
+WorkingDirectory=/app
+Environment=LD_LIBRARY_PATH=/app
+Environment=HW_BACKEND=auto
+Environment=HW_I2C=/dev/i2c-2
+Environment=HW_BME280_ADDR=0x77
+ExecStart=/app/embedded-armv7
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+ssh -t debian@192.168.7.2 "sudo systemctl daemon-reload && sudo systemctl enable --now embedded-sw"
+----
+
+Env-Variablen der Go API (aus `pkg/hal/config/config.go`):
+
+[cols="1,2,1"]
+|===
+| Variable | Beschreibung | Default
+
+| `HW_BACKEND`
+| `auto`, `c`, `rust`
+| `auto`
+
+| `HW_I2C`
+| Pfad zum I2C-Device
+| `/dev/i2c-1`
+
+| `HW_BME280_ADDR`
+| I2C-Adresse hex (z.B. `0x76`, `0x77`)
+| `0x76`
+|===
+
+NOTE: Falls Bus oder Adresse abweicht (z.B. Bus 2, Adresse 0x77): `HW_I2C=/dev/i2c-2` und `HW_BME280_ADDR=0x77` setzen.
+
+=== API testen
+
+[source,bash]
+----
+curl http://192.168.7.2:5000/health
+# → {"status":"ok","backend":"rust",...}
+
+curl http://192.168.7.2:5000/api/v1/bme280
+----
+
+Erwartete Antwort:
+
+[source,json]
+----
+{
+  "temperature": 23.45,
+  "humidity":    48.72,
+  "pressure":    1013.25,
+  "backend":     "rust"
+}
+----
+
+Falls `{"error":"Rust BME280: -2"}`: I2C-Bus oder Adresse falsch → `HW_I2C_BUS`/`HW_I2C_ADDR` in der Service-Datei prüfen und `sudo systemctl restart embedded-sw` ausführen.
+
 == Voraussetzungen prüfen
 
 === Architektur ermitteln
@@ -71,6 +200,63 @@ Falls nicht vorhanden:
 ----
 sudo apt install python3
 ----
+
+== Windows-Setup (WSL)
+
+`demo.sh` und `udal-gateway` sind Linux-Binaries — unter Windows WSL verwenden.
+
+=== WSL installieren (einmalig)
+
+In PowerShell als Administrator:
+
+[source,powershell]
+----
+wsl --install
+# Neustart, dann Debian/Ubuntu-Setup abschließen
+----
+
+=== BBB-Verbindung in WSL herstellen
+
+WSL2 verwendet ein eigenes virtuelles Netzwerk — die Route zur BBB (`192.168.7.2`) muss
+einmalig über den Windows-Host hinzugefügt werden:
+
+[source,bash]
+----
+# Windows-Host-IP ermitteln
+WINDOWS_IP=$(ip route | grep default | awk '{print $3}')
+echo $WINDOWS_IP   # z.B. 172.28.208.1
+
+# Route zum BBB-Netzwerk via Windows-Host
+sudo ip route add 192.168.7.0/24 via $WINDOWS_IP
+
+# Verbindung testen
+curl http://192.168.7.2:5000/api/v1/bme280
+----
+
+NOTE: Die Route geht nach einem WSL-Neustart verloren — Befehl dann wiederholen oder in
+`/etc/wsl.conf` automatisieren.
+
+=== Demo in WSL starten
+
+[source,bash]
+----
+# In WSL-Terminal:
+mkdir -p ~/udal_demo && cd ~/udal_demo
+
+curl -LO https://github.com/paul-fleischmann-com/udal/releases/download/v1.0.0/udal-gateway_1.0.0_linux_amd64.tar.gz
+tar xzf udal-gateway_1.0.0_linux_amd64.tar.gz
+chmod +x udal-gateway
+
+curl -LO https://raw.githubusercontent.com/paul-fleischmann-com/udal/main/examples/beaglebone/beaglebone-bridge.py
+curl -LO https://raw.githubusercontent.com/paul-fleischmann-com/udal/main/examples/beaglebone/beaglebone-bme280.schema.json
+curl -LO https://raw.githubusercontent.com/paul-fleischmann-com/udal/main/examples/beaglebone/demo.sh
+chmod +x demo.sh
+
+./demo.sh
+----
+
+NOTE: Gateway und Bridge laufen in WSL — REST-Endpunkte (`localhost:8080`, `localhost:5001`)
+sind von Windows aus ebenfalls erreichbar.
 
 == Download
 

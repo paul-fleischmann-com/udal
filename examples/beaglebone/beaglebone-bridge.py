@@ -28,7 +28,8 @@ DEFAULT_PORT    = 5001
 
 
 def fetch_json(url: str) -> dict:
-    with urllib.request.urlopen(url, timeout=5) as r:
+    # 3 s timeout: shorter than the gateway HTTP adapter's poll deadline
+    with urllib.request.urlopen(url, timeout=3) as r:
         return json.loads(r.read())
 
 
