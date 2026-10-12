@@ -27,9 +27,9 @@ Demonstriert wie ein *BeagleBone Black* (BME280-Sensor, GPIO) über den UDAL HTT
 
 .Architektur
 ....
-BeagleBone Black      Bridge (Laptop)       UDAL Gateway         Client
-:5000 REST API  <-->  :5001 /properties  <--  HTTP Adapter  <-->  gRPC :50051
-BME280 · GPIO         beaglebone-bridge.py    pollt :5001          REST :8080
+BeagleBone Black        Bridge (Laptop)       UDAL Gateway         Client
+:80/Nginx → :5000  <-->  :5001 /properties  <--  HTTP Adapter  <-->  gRPC :50051
+BME280 · GPIO            beaglebone-bridge.py    pollt :5001          REST :8080
 ....
 
 NOTE: Der UDAL HTTP Adapter erwartet Endpunkte nach der *UDAL HTTP Device Convention*
@@ -76,7 +76,8 @@ docker pull ghcr.io/paul-fleischmann-com/udal:1.0.0
 
 == BeagleBone REST-API testen
 
-Sicherstellen dass die Go-API auf Port 5000 läuft und Sensordaten liefert.
+Sicherstellen dass die BeagleBone-API über Nginx (Port 80) erreichbar ist und Sensordaten liefert.
+Port 5000 (Go REST API) läuft intern auf dem BBB und ist von außen nur über den Nginx-Proxy zugänglich.
 
 [source,bash]
 ----
@@ -357,7 +358,7 @@ _Screen: zwei Terminal-Fenster nebeneinander_
 
 | 3
 | 1:30 – 2:30
-| *BeagleBone zeigen:* Hardware kurz zeigen, SSH-Verbindung, `curl 192.168.2.55/api/v1/bme280` — echte Messwerte. +
+| *BeagleBone zeigen:* Hardware kurz zeigen, SSH-Verbindung, `curl http://192.168.2.55/api/v1/bme280` — echte Messwerte. +
 _Screen: Split — Hardware-Kamera + Terminal_
 
 | 4
@@ -371,7 +372,7 @@ _Screen: Split — Hardware-Kamera + Terminal_
 
 | 6
 | 5:00 – 6:00
-| *GPIO-Demo:* `POST 192.168.2.55/api/v1/gpio/60` → USR0 LED leuchtet. +
+| *GPIO-Demo:* `POST http://192.168.2.55/api/v1/gpio/60` → USR0 LED leuchtet. +
 _Screen: Terminal + Hardware-Kamera gleichzeitig_
 
 | 7
