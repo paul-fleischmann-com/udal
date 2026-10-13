@@ -8,12 +8,14 @@ on:
     tags:
       - "v*.*.*"
     paths:
-      - "docs/**"
+      - "docs/arc42/arc42.adoc"
+      - "docs/arc42/**"
       - "architecture.jsonc"
       - ".github/workflows/docs.yml"
   pull_request:
     paths:
-      - "docs/**"
+      - "docs/arc42/arc42.adoc"
+      - "docs/arc42/**"
       - "architecture.jsonc"
       - ".github/workflows/docs.yml"
   workflow_dispatch:

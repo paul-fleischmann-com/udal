@@ -82,6 +82,8 @@ checksum:
 sboms:
   - id: udal-gateway-sbom
     artifacts: archive
+    ids:
+      - udal-gateway
     cmd: syft
     args:
       - "$artifact"
