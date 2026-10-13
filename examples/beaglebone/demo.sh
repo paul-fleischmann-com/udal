@@ -36,6 +36,7 @@ cleanup() {
   echo ""
   curl -s -X DELETE "http://localhost:$GATEWAY_HTTP/v1/devices/$DEVICE" \
     -H "X-API-Key: $API_KEY" >/dev/null 2>&1 && warn "Device $DEVICE deregistriert"
+  # Schema-Deregistrierung: kein DELETE /v1/schemas in dieser UDAL-Version (noch nicht implementiert)
   [[ -n "$BRIDGE_PID"  ]] && kill "$BRIDGE_PID"  2>/dev/null && warn "Bridge gestoppt (PID $BRIDGE_PID)"
   [[ -n "$GATEWAY_PID" ]] && kill "$GATEWAY_PID" 2>/dev/null && warn "Gateway gestoppt (PID $GATEWAY_PID)"
 }
