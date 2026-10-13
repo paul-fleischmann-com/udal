@@ -25,7 +25,7 @@ jobs:
 
       - name: Install asciidoctor-pdf and generate demo-setup.pdf (#168)
         run: |
-          gem install asciidoctor-pdf --no-document
+          sudo gem install asciidoctor-pdf --no-document
           asciidoctor-pdf examples/beaglebone/demo-setup.adoc \
             -o examples/beaglebone/demo-setup.pdf
 
