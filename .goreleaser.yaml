@@ -26,10 +26,8 @@ builds:
     ldflags:
       - -s -w
 
-  # Separate Linux-only build for the demo package (udal_demo archive).
-  # Duplicates the gateway build but scoped to linux so the demo archive
-  # is not produced for windows/darwin.
-  - id: udal-gateway-demo
+  # Linux-only build for udal_demo Linux archive.
+  - id: udal-gateway-demo-linux
     dir: code/gateway
     main: ./cmd/gateway
     binary: udal-gateway
@@ -43,6 +41,20 @@ builds:
     ldflags:
       - -s -w
 
+  # Windows-only build for udal_demo Windows archive.
+  - id: udal-gateway-demo-windows
+    dir: code/gateway
+    main: ./cmd/gateway
+    binary: udal-gateway
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - windows
+    goarch:
+      - amd64
+    ldflags:
+      - -s -w
+
 archives:
   - id: udal-gateway
     builds:
@@ -53,11 +65,11 @@ archives:
     name_template: >-
       {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
 
-  # Demo package: gateway binary + BeagleBone bridge/schema/demo.sh in one archive.
+  # Demo package Linux: gateway + bridge + schema + demo.sh + PDF
   # Download & start: tar xzf udal_demo_*_linux_amd64.tar.gz && cd udal_demo && ./demo.sh
-  - id: udal-demo
+  - id: udal-demo-linux
     builds:
-      - udal-gateway-demo
+      - udal-gateway-demo-linux
     name_template: "udal_demo_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     wrap_in_directory: udal_demo
     files:
@@ -69,6 +81,26 @@ archives:
         dst: .
         info:
           mode: 0755
+      - src: examples/beaglebone/demo-setup.pdf
+        dst: .
+
+  # Demo package Windows: gateway.exe + bridge + schema + demo.ps1 + PDF
+  # Download & start: Expand-Archive udal_demo_*_windows_amd64.zip; cd udal_demo; .\demo.ps1
+  - id: udal-demo-windows
+    builds:
+      - udal-gateway-demo-windows
+    name_template: "udal_demo_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    wrap_in_directory: udal_demo
+    format_overrides:
+      - goos: windows
+        format: zip
+    files:
+      - src: examples/beaglebone/beaglebone-bridge.py
+        dst: .
+      - src: examples/beaglebone/beaglebone-bme280.schema.json
+        dst: .
+      - src: examples/beaglebone/demo.ps1
+        dst: .
       - src: examples/beaglebone/demo-setup.pdf
         dst: .
 
