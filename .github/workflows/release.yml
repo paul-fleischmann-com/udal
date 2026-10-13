@@ -23,6 +23,12 @@ jobs:
       - name: Install syft (CycloneDX SBOM generation, issue #32)
         run: curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
 
+      - name: Install asciidoctor-pdf and generate demo-setup.pdf (#168)
+        run: |
+          gem install asciidoctor-pdf --no-document
+          asciidoctor-pdf examples/beaglebone/demo-setup.adoc \
+            -o examples/beaglebone/demo-setup.pdf
+
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v7
         with:

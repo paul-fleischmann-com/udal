@@ -260,19 +260,44 @@ sind von Windows aus ebenfalls erreichbar.
 
 == Download
 
-Alle Dateien in ein gemeinsames Verzeichnis herunterladen (z.B. `~/udal_demo`):
+=== Option A — Demo-Paket (empfohlen)
+
+Ein einzelnes Archiv mit Gateway, Bridge, Schema und `demo.sh` — kein manuelles Zusammensuchen.
 
 [source,bash]
 ----
-# 1 — UDAL Gateway Binary (amd64)
-curl -LO https://github.com/paul-fleischmann-com/udal/releases/download/v1.0.0/udal-gateway_1.0.0_linux_amd64.tar.gz
-tar xzf udal-gateway_1.0.0_linux_amd64.tar.gz
+# amd64 (Standard-Laptop/PC)
+curl -LO https://github.com/paul-fleischmann-com/udal/releases/latest/download/udal_demo_linux_amd64.tar.gz
+tar xzf udal_demo_linux_amd64.tar.gz
+cd udal_demo
+./demo.sh
+
+# arm64 (z.B. Raspberry Pi, ARM-Server)
+# curl -LO https://github.com/paul-fleischmann-com/udal/releases/latest/download/udal_demo_linux_arm64.tar.gz
+----
+
+Inhalt des Archivs:
+
+----
+udal_demo/
+├── udal-gateway
+├── beaglebone-bridge.py
+├── beaglebone-bme280.schema.json
+└── demo.sh
+----
+
+=== Option B — Einzeln herunterladen
+
+[source,bash]
+----
+mkdir -p ~/udal_demo && cd ~/udal_demo
+
+# Gateway Binary
+curl -LO https://github.com/paul-fleischmann-com/udal/releases/latest/download/udal-gateway_linux_amd64.tar.gz
+tar xzf udal-gateway_linux_amd64.tar.gz
 chmod +x udal-gateway
 
-# arm64 (falls uname -m → aarch64):
-# curl -LO https://github.com/paul-fleischmann-com/udal/releases/download/v1.0.0/udal-gateway_1.0.0_linux_arm64.tar.gz
-
-# 2 — Bridge, Schema und Demo-Script
+# Bridge, Schema und Demo-Script
 curl -LO https://raw.githubusercontent.com/paul-fleischmann-com/udal/main/examples/beaglebone/beaglebone-bridge.py
 curl -LO https://raw.githubusercontent.com/paul-fleischmann-com/udal/main/examples/beaglebone/beaglebone-bme280.schema.json
 curl -LO https://raw.githubusercontent.com/paul-fleischmann-com/udal/main/examples/beaglebone/demo.sh
@@ -284,7 +309,7 @@ Kein `pip install` nötig — die Bridge verwendet ausschließlich Python-Stdlib
 .Alternative: Docker (kein Binary-Download nötig)
 [source,bash]
 ----
-docker pull ghcr.io/paul-fleischmann-com/udal:1.0.0
+docker pull ghcr.io/paul-fleischmann-com/udal:latest
 ----
 
 NOTE: Bei Docker muss Option B (manueller Start) verwendet werden, da `demo.sh` das lokale Binary erwartet.

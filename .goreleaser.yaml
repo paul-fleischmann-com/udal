@@ -26,16 +26,51 @@ builds:
     ldflags:
       - -s -w
 
+  # Separate Linux-only build for the demo package (udal_demo archive).
+  # Duplicates the gateway build but scoped to linux so the demo archive
+  # is not produced for windows/darwin.
+  - id: udal-gateway-demo
+    dir: code/gateway
+    main: ./cmd/gateway
+    binary: udal-gateway
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+
 archives:
   - id: udal-gateway
-    ids:
+    builds:
       - udal-gateway
     format_overrides:
       - goos: windows
-        formats:
-          - zip
+        format: zip
     name_template: >-
       {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+
+  # Demo package: gateway binary + BeagleBone bridge/schema/demo.sh in one archive.
+  # Download & start: tar xzf udal_demo_*_linux_amd64.tar.gz && cd udal_demo && ./demo.sh
+  - id: udal-demo
+    builds:
+      - udal-gateway-demo
+    name_template: "udal_demo_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    wrap_in_directory: udal_demo
+    files:
+      - src: examples/beaglebone/beaglebone-bridge.py
+        dst: .
+      - src: examples/beaglebone/beaglebone-bme280.schema.json
+        dst: .
+      - src: examples/beaglebone/demo.sh
+        dst: .
+        info:
+          mode: 0755
+      - src: examples/beaglebone/demo-setup.pdf
+        dst: .
 
 checksum:
   name_template: "checksums.txt"
