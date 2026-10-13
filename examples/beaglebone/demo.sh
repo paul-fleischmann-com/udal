@@ -34,6 +34,8 @@ step() { echo -e "\n${YELLOW}▶${NC} $*"; }
 # ── Aufräumen beim Beenden ────────────────────────────────────────────────────
 cleanup() {
   echo ""
+  curl -s -X DELETE "http://localhost:$GATEWAY_HTTP/v1/devices/$DEVICE" \
+    -H "X-API-Key: $API_KEY" >/dev/null 2>&1 && warn "Device $DEVICE deregistriert"
   [[ -n "$BRIDGE_PID"  ]] && kill "$BRIDGE_PID"  2>/dev/null && warn "Bridge gestoppt (PID $BRIDGE_PID)"
   [[ -n "$GATEWAY_PID" ]] && kill "$GATEWAY_PID" 2>/dev/null && warn "Gateway gestoppt (PID $GATEWAY_PID)"
 }
@@ -154,23 +156,77 @@ print(list(v.values())[0] if v else '(leer)')
   printf "  %-14s %s %s\n" "$PROP" "$VAL" "$UNIT"
 done
 
-# ── 8. Demo läuft ─────────────────────────────────────────────────────────────
-echo ""
-echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "${GREEN}  Demo läuft${NC}"
-echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo ""
-info "Gateway  http://localhost:$GATEWAY_HTTP   gRPC :$GATEWAY_GRPC   metrics :$GATEWAY_METRICS"
-info "Bridge   http://localhost:$BRIDGE_PORT/properties"
-info "Logs     /tmp/udal-gateway.log   /tmp/udal-bridge.log"
-echo ""
-echo -e "${CYAN}  Befehle:${NC}"
-echo "  Temperatur:    curl http://localhost:$GATEWAY_HTTP/v1/devices/$DEVICE/properties/temperature -H 'X-API-Key: $API_KEY'"
-echo "  Alle Devices:  curl http://localhost:$GATEWAY_HTTP/v1/devices -H 'X-API-Key: $API_KEY'"
-echo "  GPIO USR0 an:  curl -X POST $BBB_URL/api/v1/gpio/60 -H 'Content-Type: application/json' -d '{\"value\":1}'"
-echo "  GPIO USR0 aus: curl -X POST $BBB_URL/api/v1/gpio/60 -H 'Content-Type: application/json' -d '{\"value\":0}'"
-echo ""
-echo "  Beenden: Ctrl+C"
-echo ""
+# ── 8. Demo-Fenster ───────────────────────────────────────────────────────────
+prop_val() {
+  local RAW
+  RAW=$(curl -s "http://localhost:$GATEWAY_HTTP/v1/devices/$DEVICE/properties/$1" \
+    -H "X-API-Key: $API_KEY")
+  python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+v=d.get('value',{})
+print(list(v.values())[0] if v else '(leer)')
+" <<< "$RAW" 2>/dev/null || echo "$RAW"
+}
 
-wait
+show_banner() {
+  echo ""
+  echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+  echo -e "${GREEN}  Demo läuft${NC}"
+  echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+  echo ""
+  info "Gateway  http://localhost:$GATEWAY_HTTP   gRPC :$GATEWAY_GRPC   metrics :$GATEWAY_METRICS"
+  info "Bridge   http://localhost:$BRIDGE_PORT/properties"
+  info "Logs     /tmp/udal-gateway.log   /tmp/udal-bridge.log"
+  echo ""
+  echo -e "${CYAN}  Befehle:${NC}"
+  echo "  temp        — Temperatur lesen"
+  echo "  hum         — Luftfeuchtigkeit lesen"
+  echo "  press       — Luftdruck lesen"
+  echo "  all         — alle Properties lesen"
+  echo "  devices     — registrierte Devices anzeigen"
+  echo "  gpio-on     — USR0 LED einschalten"
+  echo "  gpio-off    — USR0 LED ausschalten"
+  echo "  help        — diese Hilfe"
+  echo "  exit        — Demo beenden (Device wird deregistriert)"
+  echo ""
+}
+
+show_banner
+
+while true; do
+  printf "${CYAN}  >>${NC} "
+  read -r CMD </dev/tty || break
+  case "$CMD" in
+    temp|temperature)
+      printf "  temperature  %s °C\n" "$(prop_val temperature)" ;;
+    hum|humidity)
+      printf "  humidity     %s %%rH\n" "$(prop_val humidity)" ;;
+    press|pressure)
+      printf "  pressure     %s hPa\n" "$(prop_val pressure)" ;;
+    all)
+      printf "  temperature  %s °C\n"  "$(prop_val temperature)"
+      printf "  humidity     %s %%rH\n" "$(prop_val humidity)"
+      printf "  pressure     %s hPa\n" "$(prop_val pressure)"
+      printf "  gpio_usr0    %s\n"     "$(prop_val gpio_usr0)" ;;
+    devices)
+      curl -s "http://localhost:$GATEWAY_HTTP/v1/devices" \
+        -H "X-API-Key: $API_KEY" | python3 -m json.tool 2>/dev/null ;;
+    gpio-on)
+      curl -s -X POST "$BBB_URL/api/v1/gpio/60" \
+        -H "Content-Type: application/json" -d '{"value":1}' >/dev/null
+      ok "USR0 LED eingeschaltet" ;;
+    gpio-off)
+      curl -s -X POST "$BBB_URL/api/v1/gpio/60" \
+        -H "Content-Type: application/json" -d '{"value":0}' >/dev/null
+      ok "USR0 LED ausgeschaltet" ;;
+    help|"?")
+      show_banner ;;
+    exit|quit|q)
+      break ;;
+    "")
+      ;;
+    *)
+      warn "Unbekannt: '$CMD' — 'help' für Befehle" ;;
+  esac
+done
