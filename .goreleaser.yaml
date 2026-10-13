@@ -74,15 +74,15 @@ archives:
     wrap_in_directory: udal_demo
     files:
       - src: examples/beaglebone/beaglebone-bridge.py
-        dst: .
+        dst: udal_demo/beaglebone-bridge.py
       - src: examples/beaglebone/beaglebone-bme280.schema.json
-        dst: .
+        dst: udal_demo/beaglebone-bme280.schema.json
       - src: examples/beaglebone/demo.sh
-        dst: .
+        dst: udal_demo/demo.sh
         info:
           mode: 0755
       - src: examples/beaglebone/demo-setup.pdf
-        dst: .
+        dst: udal_demo/demo-setup.pdf
 
   # Demo package Windows: gateway.exe + bridge + schema + demo.ps1 + PDF
   # Download & start: Expand-Archive udal_demo_*_windows_amd64.zip; cd udal_demo; .\demo.ps1
@@ -96,13 +96,13 @@ archives:
         format: zip
     files:
       - src: examples/beaglebone/beaglebone-bridge.py
-        dst: .
+        dst: udal_demo/beaglebone-bridge.py
       - src: examples/beaglebone/beaglebone-bme280.schema.json
-        dst: .
+        dst: udal_demo/beaglebone-bme280.schema.json
       - src: examples/beaglebone/demo.ps1
-        dst: .
+        dst: udal_demo/demo.ps1
       - src: examples/beaglebone/demo-setup.pdf
-        dst: .
+        dst: udal_demo/demo-setup.pdf
 
 checksum:
   name_template: "checksums.txt"
