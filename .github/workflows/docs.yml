@@ -88,7 +88,7 @@ jobs:
           done
 
       # ── 4. Sequence diagrams: bausteinsicht export-sequence → mmdc → PNG ──────
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "20"
 
