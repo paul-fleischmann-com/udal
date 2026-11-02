@@ -6,7 +6,7 @@ replace github.com/paulefl/udal/code/api/proto/gen => ../api/proto/gen
 
 require (
 	github.com/paulefl/udal/code/api/proto/gen v0.0.0
-	google.golang.org/grpc v1.84.0
+	google.golang.org/grpc v1.85.0
 	google.golang.org/protobuf v1.36.12
 )
 
