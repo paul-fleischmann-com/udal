@@ -1,4 +1,4 @@
-.PHONY: generate generate-openapi-v3 validate-openapi-v3 build test lint check install-tools
+.PHONY: generate generate-local generate-openapi-v3 validate-openapi-v3 build test lint check install-tools
 
 GOBIN ?= $(shell go env GOPATH)/bin
 
@@ -6,6 +6,10 @@ GOBIN ?= $(shell go env GOPATH)/bin
 generate:
 	buf generate
 	$(MAKE) generate-openapi-v3
+
+# Same as `buf generate` but offline: local plugins, vendored google/api protos (what the Software Factory runs; no OpenAPI v3 step)
+generate-local:
+	buf generate --config buf.local.yaml --template buf.gen.local.yaml --path code/api/proto
 
 # Convert the generated OpenAPI v2 (Swagger) spec to OpenAPI v3
 generate-openapi-v3:

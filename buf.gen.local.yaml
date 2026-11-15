@@ -1,0 +1,33 @@
+# Offline variant of buf.gen.yaml: local plugins instead of buf.build remote plugins.
+# Needs on PATH: protoc-gen-go, protoc-gen-go-grpc, protoc-gen-grpc-gateway, protoc-gen-openapiv2.
+version: v2
+
+managed:
+  enabled: true
+  override:
+    - file_option: go_package_prefix
+      value: github.com/paulefl/udal/code/api/proto/gen
+      module: buf.build/paulefl/udal
+
+plugins:
+  - local: protoc-gen-go
+    out: code/api/proto/gen
+    opt:
+      - paths=source_relative
+
+  - local: protoc-gen-go-grpc
+    out: code/api/proto/gen
+    opt:
+      - paths=source_relative
+      - require_unimplemented_servers=true
+
+  - local: protoc-gen-grpc-gateway
+    out: code/api/proto/gen
+    opt:
+      - paths=source_relative
+      - generate_unbound_methods=true
+
+  - local: protoc-gen-openapiv2
+    out: code/api/openapi
+    opt:
+      - logtostderr=true
