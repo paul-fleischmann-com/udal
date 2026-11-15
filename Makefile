@@ -9,7 +9,7 @@ generate:
 
 # Same as `buf generate` but offline: local plugins, vendored google/api protos (what the Software Factory runs; no OpenAPI v3 step)
 generate-local:
-	buf generate --config buf.local.yaml --template buf.gen.local.yaml --path code/api/proto
+	buf generate --config buf.local.yaml --template buf.gen.local.yaml --path code/api/proto/udal
 
 # Convert the generated OpenAPI v2 (Swagger) spec to OpenAPI v3
 generate-openapi-v3:
