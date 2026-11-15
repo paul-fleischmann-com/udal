@@ -1,8 +1,0 @@
-# Offline variant of buf.yaml: no remote dependency, the two google/api protos come from third_party/.
-# Used with buf.gen.local.yaml:  make generate-local
-version: v2
-
-modules:
-  - path: code/api/proto
-    name: buf.build/paulefl/udal
-  - path: third_party/googleapis

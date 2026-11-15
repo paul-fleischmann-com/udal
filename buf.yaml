@@ -1,11 +1,11 @@
 version: v2
 
+# The google/api protos are vendored (third_party/googleapis) instead of a dependency on buf.build,
+# so that code generation and lint work without network (the Software Factory runs without network).
 modules:
   - path: code/api/proto
     name: buf.build/paulefl/udal
-
-deps:
-  - buf.build/googleapis/googleapis
+  - path: third_party/googleapis
 
 lint:
   use:
@@ -16,7 +16,11 @@ lint:
     - RPC_RESPONSE_STANDARD_NAME # named for what they carry (CommandResult from
                                   # the device, Command from the server), not
                                   # "StreamCommandsRequest/Response"
+  ignore:
+    - third_party/googleapis
 
 breaking:
   use:
     - FILE
+  ignore:
+    - third_party/googleapis
