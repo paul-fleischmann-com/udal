@@ -1,0 +1,89 @@
+# Forgejo-Variante von .github/workflows/ci-proto-schema.yml (#208). Eigenstaendiger Workflow: Forgejo
+# unterstuetzt kein workflow_call, daher kein Orchestrator -- der paths-Filter sitzt
+# direkt im Trigger. Abweichungen zu GHA: upload-artifact@v3, kein type=gha Cache,
+# buf breaking gegen lokales origin/main, push-Trigger.
+name: CI — Proto + Schema
+
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - "code/api/proto/**"
+      - "code/api/openapi/**"
+      - "buf.yaml"
+      - "buf.gen.yaml"
+      - "redocly.yaml"
+      - "schema/**"
+      - ".forgejo/workflows/ci-proto-schema.yml"
+  pull_request:
+    branches: ["**"]
+    paths:
+      - "code/api/proto/**"
+      - "code/api/openapi/**"
+      - "buf.yaml"
+      - "buf.gen.yaml"
+      - "redocly.yaml"
+      - "schema/**"
+      - ".forgejo/workflows/ci-proto-schema.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  proto-ci:
+    name: Proto — Lint + Breaking Change Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0  # needed for buf breaking against main
+
+      - uses: bufbuild/buf-setup-action@v1
+        with:
+          version: "1.32.0"
+
+      - name: Proto lint
+        run: buf lint code/api/proto
+
+      - name: Breaking change check (against main)
+        if: github.event_name == 'pull_request'
+        run: |
+          git fetch origin main --depth=1 2>/dev/null || true
+          if git ls-tree origin/main -- code/api/proto/ 2>/dev/null | grep -q '\.proto'; then
+            buf breaking code/api/proto --against ".git#branch=main,subdir=code/api/proto"
+          else
+            echo "No proto files on main yet — skipping breaking change check."
+          fi
+
+      - name: Generate Go stubs (verify compilable)
+        run: buf generate code/api/proto
+
+      - name: Generate OpenAPI v3 spec
+        run: |
+          npx --yes swagger2openapi code/api/openapi/udal/v1/device.swagger.json \
+            --outfile code/api/openapi/udal/v1/device.openapi.v3.json \
+            --patch
+
+      - name: Validate OpenAPI v3 spec
+        run: npx --yes @redocly/cli lint
+
+  schema-validate:
+    name: Schema — Validate capability examples
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install check-jsonschema
+        run: pip install check-jsonschema
+
+      - name: Validate all examples against meta-schema
+        run: |
+          check-jsonschema \
+            --schemafile schema/udal-capability.schema.json \
+            schema/examples/*.json

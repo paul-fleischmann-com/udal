@@ -1,0 +1,88 @@
+# Forgejo-Variante von .github/workflows/ci-deploy.yml (#208). Eigenstaendiger Workflow: Forgejo
+# unterstuetzt kein workflow_call, daher kein Orchestrator -- der paths-Filter sitzt
+# direkt im Trigger. Abweichungen zu GHA: upload-artifact@v3, kein type=gha Cache,
+# buf breaking gegen lokales origin/main, push-Trigger.
+name: CI — Deploy (Docker, Compose, Helm)
+
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - "code/gateway/**"
+      - "deployments/docker/**"
+      - "deployments/helm/**"
+      - "Dockerfile"
+      - "examples/**"
+      - ".forgejo/workflows/ci-deploy.yml"
+  pull_request:
+    branches: ["**"]
+    paths:
+      - "code/gateway/**"
+      - "deployments/docker/**"
+      - "deployments/helm/**"
+      - "Dockerfile"
+      - "examples/**"
+      - ".forgejo/workflows/ci-deploy.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  docker-build:
+    name: Docker — Build Gateway Image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Build image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: deployments/docker/Dockerfile
+          push: false
+          load: true
+          tags: udal-gateway:ci
+
+      - name: Check image size (≤ 30 MB)
+        run: |
+          SIZE=$(docker image inspect udal-gateway:ci --format='{{.Size}}')
+          LIMIT=$((30 * 1024 * 1024))
+          echo "Image size: $((SIZE / 1024 / 1024)) MB (limit: 30 MB)"
+          if [ "$SIZE" -gt "$LIMIT" ]; then
+            echo "ERROR: Docker image exceeds 30 MB limit"
+            exit 1
+          fi
+
+  demo-compose:
+    name: Demo — Docker Compose build + verify
+    # Bewusst ohne `needs` auf den Go-Workflow (issue #30 PR review): sonst
+    # wuerde der Job still uebersprungen, sobald der Go-Teil nicht laeuft.
+    # Das Gateway-Image wird hier per `compose up --build` selbst gebaut.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # docker compose v2 + curl + jq are all preinstalled on this runner
+      # image -- no setup steps needed. TEAR_DOWN=1 so the stack doesn't
+      # linger past this job.
+      - name: Build, start, and verify the demonstrator stack
+        run: TEAR_DOWN=1 bash examples/verify-demo.sh
+
+  helm-lint:
+    name: Helm — lint udal-gateway chart
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: "latest"
+
+      - name: helm lint
+        run: |
+          helm lint deployments/helm/udal-gateway \
+            --set gateway.apiKey="ci:admin:ci-secret"
