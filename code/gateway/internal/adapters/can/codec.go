@@ -88,13 +88,13 @@ func packRaw(data []byte, positions []int, raw uint64) {
 // the low bits of raw.
 func rawToSigned(raw uint64, length int) int64 {
 	if length >= 64 {
-		return int64(raw)
+		return int64(raw) // #nosec G115 -- Signal ist 64 Bit breit: Reinterpretation als Zweierkomplement ist gewollt
 	}
 	signBit := uint64(1) << uint(length-1)
 	if raw&signBit != 0 {
-		return int64(raw) - int64(uint64(1)<<uint(length))
+		return int64(raw) - int64(uint64(1)<<uint(length)) // #nosec G115 -- raw hat hoechstens length (<64) Bits, beide Werte passen in int64
 	}
-	return int64(raw)
+	return int64(raw) // #nosec G115 -- Vorzeichenbit nicht gesetzt: raw < 2^(length-1) <= 2^63
 }
 
 // decode reads sig's physical value out of an 8-byte CAN payload. A signal
@@ -107,7 +107,7 @@ func (sig *Signal) decode(data []byte) api.PropertyValue {
 		if sig.Signed {
 			return api.IntValue(rawToSigned(raw, sig.Length))
 		}
-		return api.IntValue(int64(raw))
+		return api.IntValue(int64(raw)) // #nosec G115 -- unsigned Signal mit hoechstens 64 Bit (DBC), Reinterpretation gewollt
 	}
 	var physical float64
 	if sig.Signed {
@@ -141,7 +141,7 @@ func (sig *Signal) encode(data []byte, v api.PropertyValue) error {
 	if sig.Length < 64 {
 		mask = uint64(1)<<uint(sig.Length) - 1
 	}
-	packRaw(data, sig.positions, uint64(rawInt)&mask)
+	packRaw(data, sig.positions, uint64(rawInt)&mask) // #nosec G115 -- Zweierkomplement-Bitmuster, durch mask auf sig.Length Bits begrenzt
 	return nil
 }
 
@@ -157,7 +157,7 @@ func (msg *Message) DecodeEach(data []byte, fn func(signalName string, v api.Pro
 	muxVal, haveMux := 0, false
 	for i := range msg.Signals {
 		if msg.Signals[i].IsMultiplexor {
-			muxVal = int(extractRaw(data, msg.Signals[i].positions))
+			muxVal = int(extractRaw(data, msg.Signals[i].positions)) // #nosec G115 -- Multiplexer-Selektor ist in DBC wenige Bit breit
 			haveMux = true
 			break
 		}
@@ -206,7 +206,7 @@ func (msg *Message) Encode(data []byte, signalName string, v api.PropertyValue) 
 	if sig.MuxValue != nil {
 		for i := range msg.Signals {
 			if msg.Signals[i].IsMultiplexor {
-				packRaw(data, msg.Signals[i].positions, uint64(*sig.MuxValue))
+				packRaw(data, msg.Signals[i].positions, uint64(*sig.MuxValue)) // #nosec G115 -- MuxValue stammt aus der DBC-Datei (nicht negativ, kleiner Wertebereich)
 				break
 			}
 		}

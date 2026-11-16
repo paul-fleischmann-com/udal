@@ -121,7 +121,9 @@ func TestStreamCommands_TouchesPresenceImmediatelyOnConnect(t *testing.T) {
 		}
 	}
 	cancel()
-	<-done
+	if err := <-done; err != nil {
+		t.Logf("StreamCommands beendet mit: %v", err)
+	}
 
 	if calls := fake.calls(); len(calls) != 1 || calls[0] != deviceID {
 		t.Errorf("touch calls = %v, want exactly one [%s] (no ticks should have fired with a 1h interval)", calls, deviceID)
@@ -158,7 +160,9 @@ func TestStreamCommands_TouchesPresencePeriodically(t *testing.T) {
 		}
 	}
 	cancel()
-	<-done
+	if err := <-done; err != nil {
+		t.Logf("StreamCommands beendet mit: %v", err)
+	}
 }
 
 func TestStreamCommands_NoPresenceMonitorConfiguredIsFine(t *testing.T) {

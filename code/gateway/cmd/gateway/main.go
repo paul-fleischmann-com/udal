@@ -271,7 +271,7 @@ func main() {
 			log.Error("UDAL_CAN_DBC_FILE (or adapters.can.dbc_file) is required when the CAN adapter is enabled")
 			os.Exit(1)
 		}
-		dbcFile, err := os.Open(dbcPath)
+		dbcFile, err := os.Open(dbcPath) // #nosec G304 G703 -- Pfad kommt vom Betreiber (UDAL_CAN_DBC_FILE bzw. Konfigdatei), keine Nutzereingabe
 		if err != nil {
 			log.Error("open DBC file", "path", dbcPath, "err", err)
 			os.Exit(1)
@@ -464,7 +464,7 @@ func main() {
 			MinVersion:   tls.VersionTLS12,
 		}
 		if mtlsCACertPath != "" {
-			caPEM, err := os.ReadFile(mtlsCACertPath)
+			caPEM, err := os.ReadFile(mtlsCACertPath) // #nosec G304 G703 -- Pfad kommt vom Betreiber (mTLS-CA-Konfiguration), keine Nutzereingabe
 			if err != nil {
 				log.Error("read mTLS CA certificate", "path", mtlsCACertPath, "err", err)
 				os.Exit(1)
@@ -515,7 +515,7 @@ func main() {
 		// client certificate itself: either mTLS isn't required, mTLS is
 		// optional (no cert is still accepted), or mTLS is required and this
 		// loopback connection is exempted above.
-		dialCreds = credentials.NewTLS(&tls.Config{InsecureSkipVerify: true}) //nolint:gosec // see comment above
+		dialCreds = credentials.NewTLS(&tls.Config{InsecureSkipVerify: true}) // #nosec G402 -- nur Loopback-Dial auf den eigenen Server im selben Prozess, siehe Kommentar oben
 	} else {
 		log.Warn("starting without TLS (UDAL_DEV_INSECURE=true) — do not use in production")
 		dialCreds = insecure.NewCredentials()
