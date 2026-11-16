@@ -184,6 +184,12 @@ jobs:
       - name: Install syft (CycloneDX SBOM generation)
         run: curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
 
+      - name: Install asciidoctor-pdf and generate demo-setup.pdf (#168)
+        run: |
+          sudo gem install asciidoctor-pdf --no-document
+          asciidoctor-pdf examples/beaglebone/demo-setup.adoc \
+            -o examples/beaglebone/demo-setup.pdf
+
       - name: GoReleaser snapshot dry-run
         uses: goreleaser/goreleaser-action@v7
         with:
@@ -245,7 +251,11 @@ jobs:
           # base ubuntu-latest runner image -- modprobe fails with "Module
           # vcan not found" without it first.
           sudo apt-get update
-          sudo apt-get install -y "linux-modules-extra-$(uname -r)"
+          # Paketname je nach Runner-Kernel nicht immer verfuegbar (z.B. azure-Kernel
+          # 7.x) -> nicht hart abbrechen, vcan kann bereits im Kernel enthalten sein.
+          sudo apt-get install -y "linux-modules-extra-$(uname -r)" \
+            || sudo apt-get install -y linux-modules-extra-azure \
+            || echo "::warning::linux-modules-extra nicht installierbar, versuche modprobe direkt"
           sudo modprobe vcan
           sudo ip link add dev vcan0 type vcan
           sudo ip link set up vcan0

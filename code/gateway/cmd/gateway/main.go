@@ -515,7 +515,7 @@ func main() {
 		// client certificate itself: either mTLS isn't required, mTLS is
 		// optional (no cert is still accepted), or mTLS is required and this
 		// loopback connection is exempted above.
-		dialCreds = credentials.NewTLS(&tls.Config{InsecureSkipVerify: true}) //nolint:gosec // #nosec G402 -- nur Loopback-Dial auf den eigenen Server im selben Prozess, siehe Kommentar oben
+		dialCreds = credentials.NewTLS(&tls.Config{InsecureSkipVerify: true}) // #nosec G402 -- nur Loopback-Dial auf den eigenen Server im selben Prozess, siehe Kommentar oben
 	} else {
 		log.Warn("starting without TLS (UDAL_DEV_INSECURE=true) — do not use in production")
 		dialCreds = insecure.NewCredentials()

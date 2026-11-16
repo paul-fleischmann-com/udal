@@ -351,7 +351,7 @@ func TestSendCommand_RoutesToConnectedDevice(t *testing.T) {
 	}
 
 	cancel()
-	<-streamDone
+	_ = <-streamDone
 }
 
 func TestSendCommand_DeviceNACK(t *testing.T) {
