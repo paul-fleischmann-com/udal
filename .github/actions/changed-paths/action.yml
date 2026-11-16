@@ -1,0 +1,42 @@
+name: Changed paths
+description: >
+  Prueft, ob sich Dateien in den angegebenen Pfaden geaendert haben (#208, Forgejo).
+  Ersetzt `on.paths`: Der Workflow laeuft immer, nicht betroffene Jobs werden per
+  `if` uebersprungen, damit Required Checks nie "pending" haengen bleiben.
+  Setzt run=true bei workflow_dispatch, Push auf main, unbekannter Basis oder Treffer.
+  Voraussetzung: actions/checkout mit fetch-depth: 0.
+inputs:
+  paths:
+    description: "Zeilenweise git-Pathspecs (Glob mit ** moeglich)"
+    required: true
+outputs:
+  run:
+    description: "true, wenn der Workflow-Teil laufen soll"
+    value: ${{ steps.c.outputs.run }}
+runs:
+  using: composite
+  steps:
+    - id: c
+      shell: bash
+      env:
+        PATHS: ${{ inputs.paths }}
+        EVENT: ${{ github.event_name }}
+        REF: ${{ github.ref }}
+        BEFORE: ${{ github.event.before }}
+        PR_BASE: ${{ github.event.pull_request.base.sha }}
+      run: |
+        set -euo pipefail
+        run=true
+        BASE=""
+        if [ "$EVENT" = "pull_request" ]; then
+          BASE="$PR_BASE"
+        elif [ "$EVENT" = "push" ] && [ "$REF" != "refs/heads/main" ]; then
+          BASE="$BEFORE"
+        fi
+        if [ -n "$BASE" ] && [ "${BASE//0/}" != "" ] && git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+          specs=()
+          while IFS= read -r p; do [ -n "$p" ] && specs+=(":(glob)$p"); done <<< "$PATHS"
+          if [ -z "$(git diff --name-only "$BASE" HEAD -- "${specs[@]}")" ]; then run=false; fi
+        fi
+        echo "run=$run" >> "$GITHUB_OUTPUT"
+        echo "changed-paths: run=$run (event=$EVENT base=${BASE:-none})"

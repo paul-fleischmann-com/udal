@@ -1,24 +1,15 @@
 # Forgejo-Variante von .github/workflows/ci-python.yml (#208). Eigenstaendiger Workflow: Forgejo
-# unterstuetzt kein workflow_call, daher kein Orchestrator -- der paths-Filter sitzt
-# direkt im Trigger. Abweichungen zu GHA: upload-artifact@v3, kein type=gha Cache,
+# unterstuetzt kein workflow_call, daher kein Orchestrator -- der Pfadfilter laeuft
+# als Job `changes` (Composite Action changed-paths), nicht betroffene Jobs werden
+# uebersprungen statt den Workflow gar nicht zu starten (Required Checks!). Abweichungen zu GHA: upload-artifact@v3, kein type=gha Cache,
 # buf breaking gegen lokales origin/main, push-Trigger.
 name: CI — Python SDK
 
 on:
   push:
     branches: ["**"]
-    paths:
-      - "code/sdk/python/**"
-      - "**/pyproject.toml"
-      - "**/requirements*.txt"
-      - ".forgejo/workflows/ci-python.yml"
   pull_request:
     branches: ["**"]
-    paths:
-      - "code/sdk/python/**"
-      - "**/pyproject.toml"
-      - "**/requirements*.txt"
-      - ".forgejo/workflows/ci-python.yml"
   workflow_dispatch:
 
 concurrency:
@@ -26,8 +17,28 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    name: Geaenderte Pfade
+    runs-on: ubuntu-latest
+    outputs:
+      run: ${{ steps.c.outputs.run }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - id: c
+        uses: ./.github/actions/changed-paths
+        with:
+          paths: |
+            code/sdk/python/**
+            **/pyproject.toml
+            **/requirements*.txt
+            .forgejo/workflows/ci-python.yml
+
   python-ci:
     name: Python SDK — Lint, Test, Security
+    needs: [changes]
+    if: needs.changes.outputs.run == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
