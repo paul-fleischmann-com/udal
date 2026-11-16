@@ -1,0 +1,70 @@
+name: CI — Proto + Schema
+
+on:
+  workflow_call:
+    inputs:
+      proto:
+        type: boolean
+        default: true
+      schema:
+        type: boolean
+        default: true
+
+jobs:
+  proto-ci:
+    name: Proto — Lint + Breaking Change Check
+    if: inputs.proto
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0  # needed for buf breaking against main
+
+      - uses: bufbuild/buf-setup-action@v1
+        with:
+          version: "1.32.0"
+
+      - name: Proto lint
+        run: buf lint code/api/proto
+
+      - name: Breaking change check (against main)
+        if: github.event_name == 'pull_request'
+        run: |
+          git fetch origin main --depth=1 2>/dev/null || true
+          if git ls-tree origin/main -- code/api/proto/ 2>/dev/null | grep -q '\.proto'; then
+            buf breaking code/api/proto --against "https://github.com/${{ github.repository }}.git#branch=main,subdir=code/api/proto"
+          else
+            echo "No proto files on main yet — skipping breaking change check."
+          fi
+
+      - name: Generate Go stubs (verify compilable)
+        run: buf generate code/api/proto
+
+      - name: Generate OpenAPI v3 spec
+        run: |
+          npx --yes swagger2openapi code/api/openapi/udal/v1/device.swagger.json \
+            --outfile code/api/openapi/udal/v1/device.openapi.v3.json \
+            --patch
+
+      - name: Validate OpenAPI v3 spec
+        run: npx --yes @redocly/cli lint
+
+  schema-validate:
+    name: Schema — Validate capability examples
+    if: inputs.schema
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install check-jsonschema
+        run: pip install check-jsonschema
+
+      - name: Validate all examples against meta-schema
+        run: |
+          check-jsonschema \
+            --schemafile schema/udal-capability.schema.json \
+            schema/examples/*.json

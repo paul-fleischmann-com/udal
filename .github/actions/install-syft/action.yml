@@ -1,0 +1,7 @@
+name: Install syft
+description: syft fuer die CycloneDX-SBOM-Erzeugung (GoReleaser, #32). Gemeinsamer Baustein fuer ci-go.yml und release.yml.
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin

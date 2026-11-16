@@ -1,0 +1,13 @@
+name: Setup Go (UDAL)
+description: Go-Toolchain (stable) inkl. Modul-/Build-Cache. Gemeinsamer Baustein fuer alle ci-*.yml (#208).
+inputs:
+  cache:
+    description: "Go-Cache aktivieren"
+    default: "true"
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-go@v7
+      with:
+        go-version: "stable"
+        cache: ${{ inputs.cache }}

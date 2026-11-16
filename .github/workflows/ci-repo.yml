@@ -1,0 +1,44 @@
+name: CI — Repo (SPDX, Architektur)
+
+on:
+  workflow_call:
+    inputs:
+      spdx:
+        type: boolean
+        default: true
+      architecture:
+        type: boolean
+        default: true
+
+jobs:
+  # Schlaegt fehl, wenn einer Quelldatei der SPDX-Header fehlt. Das fruehere
+  # Auto-Commit auf main (push) entfaellt: Dieser Workflow laeuft nur noch bei
+  # pull_request (Entwicklung/volle CI laeuft auf Forgejo).
+  spdx-check:
+    name: SPDX — Header check
+    if: inputs.spdx
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Add missing SPDX headers
+        run: python3 scripts/add-spdx-headers.py
+
+      - name: Verify all headers present
+        run: python3 scripts/add-spdx-headers.py --check
+
+  architecture-validate:
+    name: Architecture — Validate Bausteinsicht model
+    if: inputs.architecture
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-go
+        with:
+          cache: "false"
+
+      - name: Install bausteinsicht
+        run: go install github.com/docToolchain/Bausteinsicht/cmd/bausteinsicht@latest
+
+      - name: Validate architecture model
+        run: bausteinsicht validate --model architecture.jsonc
