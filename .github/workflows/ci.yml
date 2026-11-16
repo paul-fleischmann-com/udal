@@ -1,8 +1,8 @@
 name: CI
 
+# Entwicklung und volle CI laufen auf Forgejo (.forgejo/workflows/ci.yml).
+# Hier nur noch Checks fuer externe PRs und manuelle Laeufe.
 on:
-  push:
-    branches: ["**"]
   pull_request:
     branches: ["**"]
   # Manual-only trigger for the load/soak test job below (issue #43) -- a

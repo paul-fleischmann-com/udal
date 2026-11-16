@@ -1,0 +1,55 @@
+= Forgejo → GitHub: Entwicklungs- und Publikationsfluss
+:toc:
+
+== Prinzip
+
+* *Forgejo* (`https://git.local/paul-fleischmann-com/udal`) ist Source of Truth: Issues, PRs, CI, Merges.
+* *GitHub* (`https://github.com/paul-fleischmann-com/udal`) ist nur Publikationsziel (extern sichtbar, Releases, ghcr.io).
+* Fluss ist einseitig: Forgejo → GitHub. Es werden nur `main` und `v*`-Tags gespiegelt.
+
+== Remotes (lokal)
+
+[source,sh]
+----
+origin  https://git.local/paul-fleischmann-com/udal.git   # Entwicklung
+github  https://github.com/paul-fleischmann-com/udal.git  # nur Lesen/Notfall
+----
+
+== Workflows
+
+[cols="2,3"]
+|===
+|Datei |Aufgabe
+|`.forgejo/workflows/ci.yml` |Volle CI (Port von GitHub-CI)
+|`.forgejo/workflows/docs.yml` |arc42-PDF bauen
+|`.forgejo/workflows/sync-github.yml` |Push von `main` und `v*`-Tags nach GitHub (kein Force)
+|`.github/workflows/ci.yml` |Nur noch externe PRs / manuell
+|`.github/workflows/release.yml` |Unveraendert: laeuft auf GitHub, getriggert durch den gespiegelten Tag (GoReleaser, ghcr.io)
+|`.github/workflows/docs.yml` |Nur noch PDF-Anhang am Release-Tag
+|===
+
+== Einrichtung (einmalig)
+
+. Forgejo-Repo anlegen: _Neue Migration_ von GitHub (uebernimmt Issues/PRs/Labels) oder leer anlegen und `git push origin --all --tags`.
+. Forgejo-Secret `MIRROR_GITHUB_TOKEN` setzen (GitHub-PAT, Fine-grained, `Contents: write` auf dieses Repo).
+. Runner-Label pruefen: Workflows nutzen `ubuntu-latest`; ggf. an Factory-Runner anpassen. Fuer die CAN-Integration (`modprobe vcan`) und Docker-Jobs braucht der Runner einen Host-Kernel/Docker-Zugriff (privileged bzw. Docker-Socket).
+. GitHub: Branch-Protection auf `main` (Push nur durch den Token-Inhaber, keine Direkt-PR-Merges), Issues/PR-Hinweis auf Forgejo (z.B. `.github/PULL_REQUEST_TEMPLATE.md`).
+. Einmalig: Repository-Variable/Secrets fuer Release (`GITHUB_TOKEN` genuegt auf GitHub).
+
+== Externe Beitraege uebernehmen
+
+[source,sh]
+----
+git fetch github pull/<N>/head:ext/pr-<N>
+git push origin ext/pr-<N>        # PR auf Forgejo oeffnen, reviewen, mergen
+----
+Danach spiegelt der Sync-Job den Merge nach GitHub; der externe PR dort wird mit Verweis geschlossen.
+
+== Fehlerfall
+
+Schlaegt der Sync-Job mit _non-fast-forward_ fehl, wurde auf GitHub direkt committed. Aenderung per `git fetch github` nach Forgejo uebernehmen, dann Job erneut starten.
+
+== Offen
+
+* `fix-deps.yml` / `fix-net-149.yml` (One-Shot, GitHub-only) wurden nicht portiert; nach Abschluss loeschen.
+* Commit-Konvention `#<issue>`: nach Issue-Migration gelten Forgejo-Nummern.

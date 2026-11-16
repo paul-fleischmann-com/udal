@@ -1,0 +1,140 @@
+# Forgejo-Variante: baut nur das PDF. Release-Anhang erledigt GitHub (.github/workflows/docs.yml) beim gespiegelten Tag.
+name: Docs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/arc42/arc42.adoc"
+      - "docs/arc42/**"
+      - "architecture.jsonc"
+      - ".forgejo/workflows/docs.yml"
+  pull_request:
+    paths:
+      - "docs/arc42/arc42.adoc"
+      - "docs/arc42/**"
+      - "architecture.jsonc"
+      - ".forgejo/workflows/docs.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-pdf:
+    name: Build arc42 PDF
+    runs-on: ubuntu-latest
+        steps:
+      - uses: actions/checkout@v7
+
+      # ── 1. bausteinsicht ──────────────────────────────────────────────────────
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "stable"
+          cache: true
+
+      - name: Install bausteinsicht
+        run: go install github.com/docToolchain/Bausteinsicht/cmd/bausteinsicht@latest
+
+      # ── 2. draw.io CLI (for static view export with auto-layout) ──────────────
+      - name: Install draw.io AppImage
+        run: |
+          sudo apt-get install -y --no-install-recommends \
+            xvfb libgbm1 libnspr4 libnss3 libasound2t64 \
+            libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 \
+            libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2
+          wget -q -O /tmp/drawio.AppImage \
+            "https://github.com/jgraph/drawio-desktop/releases/download/v26.0.4/drawio-x86_64-26.0.4.AppImage"
+          chmod +x /tmp/drawio.AppImage
+          cd /tmp && ./drawio.AppImage --appimage-extract > /dev/null
+          sudo chown root:root /tmp/squashfs-root/chrome-sandbox
+          sudo chmod 4755 /tmp/squashfs-root/chrome-sandbox
+          echo "BAUSTEINSICHT_DRAWIO_PATH=/tmp/squashfs-root/drawio" >> "$GITHUB_ENV"
+
+      # ── 3. Static views: sync → auto-layout → export via draw.io ─────────────
+      # bausteinsicht sync writes architecture.drawio next to the model file.
+      # --relayout applies hierarchical auto-layout, resetting any manual positions.
+      # export produces architecture-<view-key>.png for every view.
+      - name: Generate static view diagrams
+        run: |
+          mkdir -p docs/images
+
+          bausteinsicht sync --model architecture.jsonc --relayout
+
+          xvfb-run --auto-servernum \
+            bausteinsicht export \
+              --model architecture.jsonc \
+              --image-format png \
+              --scale 2 \
+              --output docs/images/
+
+          # Rename architecture-<view>.png → arch-<view>.png
+          for png in docs/images/architecture-*.png; do
+            [ -f "$png" ] || continue
+            view="${png##*/architecture-}"
+            mv "$png" "docs/images/arch-${view}"
+          done
+
+      # ── 4. Sequence diagrams: bausteinsicht export-sequence → mmdc → PNG ──────
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Mermaid CLI
+        run: npm install -g @mermaid-js/mermaid-cli
+
+      - name: Write Puppeteer config (no-sandbox for CI)
+        run: |
+          cat > /tmp/puppeteer.json <<'EOF'
+          {"args": ["--no-sandbox", "--disable-setuid-sandbox"]}
+          EOF
+
+      - name: Generate sequence diagrams
+        run: |
+          # export-sequence writes sequence-<view>.md; mmdc requires .mmd extension
+          bausteinsicht export-sequence \
+            --model architecture.jsonc \
+            --diagram-format mermaid \
+            --output docs/images/
+
+          for f in docs/images/sequence-*.md; do
+            [ -f "$f" ] || continue
+            view="$(basename "$f" .md)"
+            view="${view#sequence-}"
+            mv "$f" "docs/images/${view}.mmd"
+            mmdc \
+              --input  "docs/images/${view}.mmd" \
+              --output "docs/images/arch-${view}.png" \
+              --puppeteerConfigFile /tmp/puppeteer.json \
+              --theme neutral \
+              --width 1400
+            rm "docs/images/${view}.mmd"
+          done
+
+      # ── 5. Element tables (combined AsciiDoc, included in §5.4) ──────────────
+      - name: Generate element tables
+        run: |
+          mkdir -p docs/arc42/generated
+          bausteinsicht export-table \
+            --model architecture.jsonc \
+            --table-format adoc \
+            --output docs/arc42/generated/
+
+      # ── 6. Build PDF ──────────────────────────────────────────────────────────
+      - name: Install Asciidoctor PDF
+        run: sudo gem install asciidoctor-pdf --no-document
+
+      - name: Build PDF
+        run: |
+          asciidoctor-pdf \
+            --destination-dir dist/docs \
+            --out-file udal-arc42.pdf \
+            docs/arc42/arc42.adoc
+
+      - name: Upload PDF artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: udal-arc42-pdf
+          path: dist/docs/udal-arc42.pdf
+          retention-days: 30
