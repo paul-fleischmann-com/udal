@@ -351,7 +351,9 @@ func TestSendCommand_RoutesToConnectedDevice(t *testing.T) {
 	}
 
 	cancel()
-	_ = <-streamDone
+	if err := <-streamDone; err != nil {
+		t.Logf("StreamCommands beendet mit: %v", err)
+	}
 }
 
 func TestSendCommand_DeviceNACK(t *testing.T) {
@@ -538,7 +540,9 @@ func TestSubscribe_FiltersByPropertyPath(t *testing.T) {
 		}
 	}
 	cancel()
-	<-done
+	if err := <-done; err != nil {
+		t.Logf("StreamCommands beendet mit: %v", err)
+	}
 
 	if got := stream.sent(); len(got) != 1 || got[0].GetPropertyPath() != "humidity" {
 		t.Errorf("expected exactly one humidity event, got %+v", got)
@@ -580,7 +584,9 @@ func TestSubscribe_StatusEventsIgnorePropertyPathFilter(t *testing.T) {
 		}
 	}
 	cancel()
-	<-done
+	if err := <-done; err != nil {
+		t.Logf("StreamCommands beendet mit: %v", err)
+	}
 
 	got := stream.sent()
 	if len(got) != 1 {
