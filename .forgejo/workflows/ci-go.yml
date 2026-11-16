@@ -1,50 +1,14 @@
-# Forgejo-Variante von .github/workflows/ci-go.yml (#208). Eigenstaendiger Workflow: Forgejo
-# unterstuetzt kein workflow_call, daher kein Orchestrator -- der Pfadfilter laeuft
-# als Job `changes` (Composite Action changed-paths), nicht betroffene Jobs werden
-# uebersprungen statt den Workflow gar nicht zu starten (Required Checks!). Abweichungen zu GHA: upload-artifact@v3, kein type=gha Cache,
-# buf breaking gegen lokales origin/main, push-Trigger.
+# Forgejo-Variante von .github/workflows/ci-go.yml (#213). Gleiche Struktur wie GHA (Orchestrator +
+# workflow_call). Abweichungen zu GHA: upload-artifact@v3 (nicht blockierend, TLS), kein type=gha
+# Cache, buf breaking gegen lokales origin/main.
 name: CI — Go
 
 on:
-  push:
-    branches: ["**"]
-  pull_request:
-    branches: ["**"]
-  workflow_dispatch:
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  workflow_call:
 
 jobs:
-  changes:
-    name: Geaenderte Pfade
-    runs-on: ubuntu-latest
-    outputs:
-      run: ${{ steps.c.outputs.run }}
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-      - id: c
-        uses: ./.github/actions/changed-paths
-        with:
-          paths: |
-            code/gateway/**
-            code/adapters/**
-            code/cli/**
-            code/sdk/go/**
-            go.work
-            go.mod
-            go.sum
-            .goreleaser.yaml
-            .github/actions/**
-            .forgejo/workflows/ci-go.yml
-
   go-build-test:
     name: Go — Build & Test
-    needs: [changes]
-    if: needs.changes.outputs.run == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -67,8 +31,6 @@ jobs:
 
   go-lint:
     name: Go — Lint
-    needs: [changes]
-    if: needs.changes.outputs.run == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -85,8 +47,6 @@ jobs:
 
   go-security:
     name: Go — Security (gosec + govulncheck)
-    needs: [changes]
-    if: needs.changes.outputs.run == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -118,8 +78,6 @@ jobs:
   # every relevant PR instead.
   release-dry-run:
     name: Release — GoReleaser snapshot dry-run
-    needs: [changes]
-    if: needs.changes.outputs.run == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -148,8 +106,7 @@ jobs:
 
   go-integration:
     name: Go — Integration Tests (MQTT)
-    needs: [changes, go-build-test]
-    if: needs.changes.outputs.run == 'true'
+    needs: [go-build-test]
     runs-on: ubuntu-latest
     services:
       mosquitto:
@@ -177,8 +134,7 @@ jobs:
   # SocketCAN is Linux-only in the first place).
   go-integration-can:
     name: Go — Integration Tests (CAN)
-    needs: [changes, go-build-test]
-    if: needs.changes.outputs.run == 'true'
+    needs: [go-build-test]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7

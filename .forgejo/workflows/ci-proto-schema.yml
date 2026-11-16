@@ -1,47 +1,22 @@
-# Forgejo-Variante von .github/workflows/ci-proto-schema.yml (#208). Eigenstaendiger Workflow: Forgejo
-# unterstuetzt kein workflow_call, daher kein Orchestrator -- der Pfadfilter laeuft
-# als Job `changes` (Composite Action changed-paths), nicht betroffene Jobs werden
-# uebersprungen statt den Workflow gar nicht zu starten (Required Checks!). Abweichungen zu GHA: upload-artifact@v3, kein type=gha Cache,
-# buf breaking gegen lokales origin/main, push-Trigger.
+# Forgejo-Variante von .github/workflows/ci-proto-schema.yml (#213). Gleiche Struktur wie GHA (Orchestrator +
+# workflow_call). Abweichungen zu GHA: upload-artifact@v3 (nicht blockierend, TLS), kein type=gha
+# Cache, buf breaking gegen lokales origin/main.
 name: CI — Proto + Schema
 
 on:
-  push:
-    branches: ["**"]
-  pull_request:
-    branches: ["**"]
-  workflow_dispatch:
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  workflow_call:
+    inputs:
+      proto:
+        type: boolean
+        default: true
+      schema:
+        type: boolean
+        default: true
 
 jobs:
-  changes:
-    name: Geaenderte Pfade
-    runs-on: ubuntu-latest
-    outputs:
-      run: ${{ steps.c.outputs.run }}
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-      - id: c
-        uses: ./.github/actions/changed-paths
-        with:
-          paths: |
-            code/api/proto/**
-            code/api/openapi/**
-            buf.yaml
-            buf.gen.yaml
-            redocly.yaml
-            schema/**
-            .forgejo/workflows/ci-proto-schema.yml
-
   proto-ci:
     name: Proto — Lint + Breaking Change Check
-    needs: [changes]
-    if: needs.changes.outputs.run == 'true'
+    if: inputs.proto
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -79,8 +54,7 @@ jobs:
 
   schema-validate:
     name: Schema — Validate capability examples
-    needs: [changes]
-    if: needs.changes.outputs.run == 'true'
+    if: inputs.schema
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7

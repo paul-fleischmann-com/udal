@@ -1,13 +1,12 @@
-# Forgejo-Variante von .github/workflows/ci-nightly.yml (#208). Eigenstaendiger Workflow: Forgejo
-# unterstuetzt kein workflow_call, daher kein Orchestrator -- der paths-Filter sitzt
-# direkt im Trigger. Abweichungen zu GHA: upload-artifact@v3, kein type=gha Cache,
-# buf breaking gegen lokales origin/main, push-Trigger.
+# Forgejo-Variante von .github/workflows/ci-nightly.yml (#213). Gleiche Struktur wie GHA (Orchestrator +
+# workflow_call). Abweichungen zu GHA: upload-artifact@v3 (nicht blockierend, TLS), kein type=gha
+# Cache, buf breaking gegen lokales origin/main.
 name: CI — Nightly / Manual
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 2 * * 0"
+    - cron: "0 2 * * 0"  # woechentlich Sonntag 02:00 UTC
 
 jobs:
   # Issue #43 (QR-02). Not part of the CI Gate and not triggered by push/PR -- a
