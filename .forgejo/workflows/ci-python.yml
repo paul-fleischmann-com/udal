@@ -1,0 +1,59 @@
+# Forgejo-Variante von .github/workflows/ci-python.yml (#208). Eigenstaendiger Workflow: Forgejo
+# unterstuetzt kein workflow_call, daher kein Orchestrator -- der paths-Filter sitzt
+# direkt im Trigger. Abweichungen zu GHA: upload-artifact@v3, kein type=gha Cache,
+# buf breaking gegen lokales origin/main, push-Trigger.
+name: CI — Python SDK
+
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - "code/sdk/python/**"
+      - "**/pyproject.toml"
+      - "**/requirements*.txt"
+      - ".forgejo/workflows/ci-python.yml"
+  pull_request:
+    branches: ["**"]
+    paths:
+      - "code/sdk/python/**"
+      - "**/pyproject.toml"
+      - "**/requirements*.txt"
+      - ".forgejo/workflows/ci-python.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python-ci:
+    name: Python SDK — Lint, Test, Security
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: code/sdk/python
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Lint + format (ruff)
+        run: |
+          ruff check .
+          ruff format --check .
+
+      - name: Type check (mypy)
+        run: mypy .
+
+      - name: Tests
+        run: pytest --tb=short -q
+
+      - name: Security (pip-audit)
+        run: |
+          pip install pip-audit
+          pip-audit

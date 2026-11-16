@@ -20,4 +20,4 @@ Gemeinsame Bausteine: Composite Actions in `.github/actions/` (`setup-go`, `inst
 
 **Neue Gruppe:** `ci-<gruppe>.yml` mit `on: workflow_call` anlegen, Filter in `ci.yml` (`changes`) ergaenzen, Aufruf-Job hinzufuegen und im `ci-gate` unter `needs` eintragen.
 
-**Forgejo:** `.forgejo/workflows/ci.yml` wird nach demselben Schema umgebaut, sobald die GHA-Workflows stabil laufen (Folge-Issue zu #208).
+**Forgejo:** `.forgejo/workflows/ci-<gruppe>.yml` spiegelt dieselben Gruppen (gleiche Dateinamen, gleiche Jobs). Forgejo-Actions kennt kein `workflow_call`; daher sind die Forgejo-Workflows **eigenstaendig** (eigener `push`/`pull_request`-Trigger mit nativem `paths`-Filter, kein Orchestrator, kein `CI Gate`). Required Checks muessen in Forgejo pro Workflow gesetzt werden. Abweichungen zu GHA: `upload-artifact@v3` (nicht blockierend), kein `type=gha`-Cache, `buf breaking` gegen lokales `origin/main`, SPDX-Auto-Commit auf `main`-Push. Aenderungen an einer Gruppe immer in beiden Verzeichnissen nachziehen.

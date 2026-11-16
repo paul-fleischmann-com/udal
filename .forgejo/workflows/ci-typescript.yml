@@ -1,0 +1,56 @@
+# Forgejo-Variante von .github/workflows/ci-typescript.yml (#208). Eigenstaendiger Workflow: Forgejo
+# unterstuetzt kein workflow_call, daher kein Orchestrator -- der paths-Filter sitzt
+# direkt im Trigger. Abweichungen zu GHA: upload-artifact@v3, kein type=gha Cache,
+# buf breaking gegen lokales origin/main, push-Trigger.
+name: CI — TypeScript SDK
+
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - "code/sdk/typescript/**"
+      - "**/package.json"
+      - "**/tsconfig.json"
+      - ".forgejo/workflows/ci-typescript.yml"
+  pull_request:
+    branches: ["**"]
+    paths:
+      - "code/sdk/typescript/**"
+      - "**/package.json"
+      - "**/tsconfig.json"
+      - ".forgejo/workflows/ci-typescript.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  typescript-ci:
+    name: TypeScript SDK — Lint, Test, Audit
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: code/sdk/typescript
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: code/sdk/typescript/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint (eslint)
+        run: npm run lint
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Tests
+        run: npm test
+
+      - name: Security audit
+        run: npm audit --audit-level=high

@@ -1,0 +1,73 @@
+# Forgejo-Variante von .github/workflows/ci-repo.yml (#208). Eigenstaendiger Workflow: Forgejo
+# unterstuetzt kein workflow_call, daher kein Orchestrator -- der paths-Filter sitzt
+# direkt im Trigger. Abweichungen zu GHA: upload-artifact@v3, kein type=gha Cache,
+# buf breaking gegen lokales origin/main, push-Trigger.
+name: CI — Repo (SPDX, Architektur)
+
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - "architecture.jsonc"
+      - "code/**/*.go"
+      - "code/**/*.rs"
+      - "code/**/*.py"
+      - "code/**/*.ts"
+      - "scripts/add-spdx-headers.py"
+      - ".forgejo/workflows/ci-repo.yml"
+  pull_request:
+    branches: ["**"]
+    paths:
+      - "architecture.jsonc"
+      - "code/**/*.go"
+      - "code/**/*.rs"
+      - "code/**/*.py"
+      - "code/**/*.ts"
+      - "scripts/add-spdx-headers.py"
+      - ".forgejo/workflows/ci-repo.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Schlaegt fehl, wenn einer Quelldatei der SPDX-Header fehlt. Das fruehere
+  # Auto-Commit auf main (push) entfaellt: Dieser Workflow laeuft nur noch bei
+  # pull_request (Entwicklung/volle CI laeuft auf Forgejo).
+  spdx-check:
+    name: SPDX — Header check
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Add missing SPDX headers
+        run: python3 scripts/add-spdx-headers.py
+
+      - name: Commit added headers (main push only)
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: |
+          git config user.name "forgejo-actions[bot]"
+          git config user.email "forgejo-actions[bot]@noreply.git.local"
+          git diff --quiet && echo "No missing headers." || \
+            (git commit -am "chore - add missing SPDX headers [skip ci]" && git push)
+
+      - name: Verify all headers present
+        run: python3 scripts/add-spdx-headers.py --check
+
+  architecture-validate:
+    name: Architecture — Validate Bausteinsicht model
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-go
+        with:
+          cache: "false"
+
+      - name: Install bausteinsicht
+        run: go install github.com/docToolchain/Bausteinsicht/cmd/bausteinsicht@latest
+
+      - name: Validate architecture model
+        run: bausteinsicht validate --model architecture.jsonc
