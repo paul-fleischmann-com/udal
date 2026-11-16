@@ -1,0 +1,44 @@
+# TEMPORAER (#213): Diagnose Forgejo-Faehigkeiten (Version, workflow_call, needs/toJSON, skipped).
+# Manuell starten: Actions -> "Diag Caller" -> Run workflow. Nach dem Test entfernen.
+name: Diag Caller
+
+on:
+  workflow_dispatch:
+
+jobs:
+  info:
+    name: Info (Version, Runner)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Forgejo-Version (API)
+        run: |
+          echo "server_url=${{ github.server_url }}"
+          curl -sS -m 15 "${{ github.server_url }}/api/v1/version" || curl -sSk -m 15 "${{ github.server_url }}/api/v1/version" || echo "API nicht erreichbar"
+          echo
+      - name: Runner-Umgebung
+        run: |
+          echo "runner.os=${{ runner.os }} runner.arch=${{ runner.arch }}"
+          env | grep -i -E 'forgejo|gitea|runner|act_' | sort || true
+
+  call-reusable:
+    name: Aufruf workflow_call
+    uses: ./.forgejo/workflows/diag-callee.yml
+    with:
+      flag: true
+
+  skipped-job:
+    name: Uebersprungener Job (if false)
+    if: false
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "sollte nie laufen"
+
+  gate:
+    name: Diag Gate (needs + toJSON)
+    needs: [info, call-reusable, skipped-job]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ergebnisse
+        run: |
+          echo '${{ toJSON(needs) }}'
