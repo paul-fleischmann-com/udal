@@ -40,6 +40,8 @@ jobs:
         with:
           filters: |
             go:
+              - '.github/workflows/ci-go.yml'
+              - '.github/actions/**'
               - 'code/gateway/**'
               - 'code/adapters/**'
               - 'code/cli/**'
@@ -49,38 +51,48 @@ jobs:
               - 'go.sum'
               - '.goreleaser.yaml'
             rust:
+              - '.github/workflows/ci-rust.yml'
               - 'code/sdk/rust/**'
               - '**/Cargo.toml'
               - '**/Cargo.lock'
             python:
+              - '.github/workflows/ci-python.yml'
               - 'code/sdk/python/**'
               - '**/pyproject.toml'
               - '**/requirements*.txt'
             typescript:
+              - '.github/workflows/ci-typescript.yml'
               - 'code/sdk/typescript/**'
               - '**/package.json'
               - '**/tsconfig.json'
             reflex:
+              - '.github/workflows/ci-reflex.yml'
               - 'dashboard/**'
               - 'code/sdk/python/**'
             proto:
+              - '.github/workflows/ci-proto-schema.yml'
               - 'code/api/proto/**'
               - 'code/api/openapi/**'
               - 'buf.yaml'
               - 'buf.gen.yaml'
               - 'redocly.yaml'
             docker:
+              - '.github/workflows/ci-deploy.yml'
               - 'code/gateway/**'
               - 'deployments/docker/**'
               - 'Dockerfile'
               - 'examples/**'
             architecture:
+              - '.github/workflows/ci-repo.yml'
               - 'architecture.jsonc'
             schema:
+              - '.github/workflows/ci-proto-schema.yml'
               - 'schema/**'
             helm:
+              - '.github/workflows/ci-deploy.yml'
               - 'deployments/helm/**'
             spdx:
+              - '.github/workflows/ci-repo.yml'
               - 'code/**/*.go'
               - 'code/**/*.rs'
               - 'code/**/*.py'
