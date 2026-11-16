@@ -1,0 +1,211 @@
+# Forgejo-Variante von .github/workflows/ci.yml (#213). Orchestrator: erkennt geaenderte Pfade
+# (Composite Action changed-paths statt dorny/paths-filter, das die GitHub-API braucht) und ruft pro
+# Gruppe einen wiederverwendbaren Workflow auf. `CI Gate` ist der einzige Required Check.
+# Abweichung zu GHA: zusaetzlicher push-Trigger (Dev laeuft auf Forgejo, siehe docs/forgejo-github-sync.adoc).
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  changes:
+    name: Detect changed paths
+    runs-on: ubuntu-latest
+    outputs:
+      go: ${{ steps.go.outputs.run }}
+      rust: ${{ steps.rust.outputs.run }}
+      python: ${{ steps.python.outputs.run }}
+      typescript: ${{ steps.typescript.outputs.run }}
+      reflex: ${{ steps.reflex.outputs.run }}
+      proto: ${{ steps.proto.outputs.run }}
+      schema: ${{ steps.schema.outputs.run }}
+      docker: ${{ steps.docker.outputs.run }}
+      helm: ${{ steps.helm.outputs.run }}
+      architecture: ${{ steps.architecture.outputs.run }}
+      spdx: ${{ steps.spdx.outputs.run }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - id: go
+        uses: ./.github/actions/changed-paths
+        with:
+          paths: |
+            code/gateway/**
+            code/adapters/**
+            code/cli/**
+            code/sdk/go/**
+            go.work
+            go.mod
+            go.sum
+            .goreleaser.yaml
+            .github/workflows/ci-go.yml
+            .forgejo/workflows/ci-go.yml
+            .github/actions/**
+      - id: rust
+        uses: ./.github/actions/changed-paths
+        with:
+          paths: |
+            code/sdk/rust/**
+            **/Cargo.toml
+            **/Cargo.lock
+            .forgejo/workflows/ci-rust.yml
+      - id: python
+        uses: ./.github/actions/changed-paths
+        with:
+          paths: |
+            code/sdk/python/**
+            **/pyproject.toml
+            **/requirements*.txt
+            .forgejo/workflows/ci-python.yml
+      - id: typescript
+        uses: ./.github/actions/changed-paths
+        with:
+          paths: |
+            code/sdk/typescript/**
+            **/package.json
+            **/tsconfig.json
+            .forgejo/workflows/ci-typescript.yml
+      - id: reflex
+        uses: ./.github/actions/changed-paths
+        with:
+          paths: |
+            dashboard/**
+            code/sdk/python/**
+            .forgejo/workflows/ci-reflex.yml
+      - id: proto
+        uses: ./.github/actions/changed-paths
+        with:
+          paths: |
+            code/api/proto/**
+            code/api/openapi/**
+            buf.yaml
+            buf.gen.yaml
+            redocly.yaml
+            .forgejo/workflows/ci-proto-schema.yml
+      - id: schema
+        uses: ./.github/actions/changed-paths
+        with:
+          paths: |
+            schema/**
+            .forgejo/workflows/ci-proto-schema.yml
+      - id: docker
+        uses: ./.github/actions/changed-paths
+        with:
+          paths: |
+            code/gateway/**
+            deployments/docker/**
+            Dockerfile
+            examples/**
+            .forgejo/workflows/ci-deploy.yml
+      - id: helm
+        uses: ./.github/actions/changed-paths
+        with:
+          paths: |
+            deployments/helm/**
+            .forgejo/workflows/ci-deploy.yml
+      - id: architecture
+        uses: ./.github/actions/changed-paths
+        with:
+          paths: |
+            architecture.jsonc
+            .forgejo/workflows/ci-repo.yml
+      - id: spdx
+        uses: ./.github/actions/changed-paths
+        with:
+          paths: |
+            code/**/*.go
+            code/**/*.rs
+            code/**/*.py
+            code/**/*.ts
+            scripts/add-spdx-headers.py
+            .forgejo/workflows/ci-repo.yml
+
+  go:
+    name: go
+    needs: changes
+    if: needs.changes.outputs.go == 'true'
+    uses: ./.forgejo/workflows/ci-go.yml
+
+  rust:
+    name: rust
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    uses: ./.forgejo/workflows/ci-rust.yml
+
+  python:
+    name: python
+    needs: changes
+    if: needs.changes.outputs.python == 'true'
+    uses: ./.forgejo/workflows/ci-python.yml
+
+  typescript:
+    name: typescript
+    needs: changes
+    if: needs.changes.outputs.typescript == 'true'
+    uses: ./.forgejo/workflows/ci-typescript.yml
+
+  reflex:
+    name: reflex
+    needs: changes
+    if: needs.changes.outputs.reflex == 'true'
+    uses: ./.forgejo/workflows/ci-reflex.yml
+
+  proto-schema:
+    name: proto-schema
+    needs: changes
+    if: needs.changes.outputs.proto == 'true' || needs.changes.outputs.schema == 'true'
+    uses: ./.forgejo/workflows/ci-proto-schema.yml
+    with:
+      proto: ${{ needs.changes.outputs.proto == 'true' }}
+      schema: ${{ needs.changes.outputs.schema == 'true' }}
+
+  deploy:
+    name: deploy
+    needs: changes
+    if: needs.changes.outputs.docker == 'true' || needs.changes.outputs.helm == 'true'
+    uses: ./.forgejo/workflows/ci-deploy.yml
+    with:
+      docker: ${{ needs.changes.outputs.docker == 'true' }}
+      helm: ${{ needs.changes.outputs.helm == 'true' }}
+
+  repo:
+    name: repo
+    needs: changes
+    if: needs.changes.outputs.spdx == 'true' || needs.changes.outputs.architecture == 'true'
+    uses: ./.forgejo/workflows/ci-repo.yml
+    permissions:
+      contents: write
+    with:
+      spdx: ${{ needs.changes.outputs.spdx == 'true' }}
+      architecture: ${{ needs.changes.outputs.architecture == 'true' }}
+
+  ci-gate:
+    name: CI Gate (all checks passed)
+    needs: [go, rust, python, typescript, reflex, proto-schema, deploy, repo]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check all jobs
+        run: |
+          results='${{ toJSON(needs) }}'
+          echo "$results" | python3 -c "
+          import json, sys
+          needs = json.load(sys.stdin)
+          failed = [
+            name for name, data in needs.items()
+            if data['result'] not in ('success', 'skipped')
+          ]
+          if failed:
+            print('FAILED jobs:', ', '.join(failed))
+            sys.exit(1)
+          print('All jobs passed or were skipped.')
+          "
