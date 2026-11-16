@@ -2,11 +2,15 @@ name: CI
 
 # Entwicklung und volle CI laufen auf Forgejo (.forgejo/workflows/ci.yml).
 # Hier nur noch Checks fuer externe PRs und manuelle Laeufe.
+#
+# Orchestrator (Variante D, #208): erkennt geaenderte Pfade und ruft pro Gruppe
+# einen eigenen wiederverwendbaren Workflow (ci-<gruppe>.yml) auf. Der
+# `CI Gate`-Job unten bleibt der einzige Required Check -- so haengen
+# pfadgefilterte Gruppen nicht als "pending", wenn sie uebersprungen werden.
+# Der Load/Soak-Test liegt in ci-nightly.yml (schedule + workflow_dispatch).
 on:
   pull_request:
     branches: ["**"]
-  # Manual-only trigger for the load/soak test job below (issue #43) -- a
-  # 1,000-device/30-minute run is too slow to gate every push/PR.
   workflow_dispatch:
 
 concurrency:
@@ -83,631 +87,67 @@ jobs:
               - 'code/**/*.ts'
               - 'scripts/add-spdx-headers.py'
 
-# ─── Go: Build + Test + Lint + Security ──────────────────────────────────────
-  go-build-test:
-    name: Go — Build & Test
+  go:
+    name: go
     needs: changes
     if: needs.changes.outputs.go == 'true' || github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
-        with:
-          go-version: "stable"
-          cache: true
+    uses: ./.github/workflows/ci-go.yml
 
-      - name: Build gateway + CLI
-        run: go build ./code/gateway/... ./code/cli/...
-
-      - name: Unit tests
-        run: go test -race -coverprofile=coverage.out ./code/gateway/... ./code/cli/...
-
-      - name: Upload coverage
-        uses: actions/upload-artifact@v6
-        with:
-          name: go-coverage
-          path: coverage.out
-
-  go-lint:
-    name: Go — Lint
-    needs: changes
-    if: needs.changes.outputs.go == 'true' || github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
-        with:
-          go-version: "stable"
-          cache: true
-      - uses: golangci/golangci-lint-action@v9
-        with:
-          # "latest" keeps the golangci-lint binary in sync with the Go
-          # toolchain version used by the runner. Pinning a specific v2.x
-          # release would require manual bumps whenever the go directive in
-          # any go.mod exceeds the version golangci-lint was built with
-          # (e.g. v2.12.2 built with go1.26 rejects go1.27.x modules).
-          version: "latest"
-          args: --timeout=5m ./code/gateway/... ./code/cli/...
-
-  go-security:
-    name: Go — Security (gosec + govulncheck)
-    needs: changes
-    if: needs.changes.outputs.go == 'true' || github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
-        with:
-          go-version: "stable"
-          cache: true
-
-      - name: Install gosec
-        run: go install github.com/securego/gosec/v2/cmd/gosec@latest
-
-      - name: Run gosec
-        run: gosec ./code/gateway/... ./code/cli/...
-
-      - name: Install govulncheck
-        run: go install golang.org/x/vuln/cmd/govulncheck@latest
-
-      - name: Run govulncheck (gateway)
-        run: govulncheck ./...
-        working-directory: code/gateway
-
-      - name: Run govulncheck (cli)
-        run: govulncheck ./...
-        working-directory: code/cli
-
-# ─── Go: Release dry-run (GoReleaser + CycloneDX SBOM, issue #32) ─────────────
-# `goreleaser release --clean` on a real tag push (.github/workflows/release.yml)
-# is the only thing that ever exercises .goreleaser.yaml -- untested until the
-# first actual release tag, at which point a config mistake blocks the release
-# itself. `--snapshot` runs the same build/archive/SBOM/changelog pipeline
-# without needing a tag or publishing anything, so this job catches config
-# breakage (e.g. a builds/archives field GoReleaser no longer recognizes) on
-# every relevant PR instead.
-  release-dry-run:
-    name: Release — GoReleaser snapshot dry-run
-    needs: changes
-    if: needs.changes.outputs.go == 'true' || github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0  # GoReleaser reads full tag/commit history for the changelog pipe
-
-      - uses: actions/setup-go@v7
-        with:
-          go-version: "stable"
-          cache: true
-
-      - name: Install syft (CycloneDX SBOM generation)
-        run: curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
-
-      - name: Install asciidoctor-pdf and generate demo-setup.pdf (#168)
-        run: |
-          sudo gem install asciidoctor-pdf --no-document
-          asciidoctor-pdf examples/beaglebone/demo-setup.adoc \
-            -o examples/beaglebone/demo-setup.pdf
-
-      - name: GoReleaser snapshot dry-run
-        uses: goreleaser/goreleaser-action@v7
-        with:
-          distribution: goreleaser
-          # Pinned to the same version as release.yml -- see that file's
-          # comment on why "latest" isn't used.
-          version: "v2.17.1"
-          args: release --snapshot --clean
-
-# ─── Go: Integration Tests (MQTT via Docker) ──────────────────────────────────
-  go-integration:
-    name: Go — Integration Tests (MQTT)
-    needs: [go-build-test]
-    if: needs.changes.outputs.go == 'true' || github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    services:
-      mosquitto:
-        image: eclipse-mosquitto:2
-        ports:
-          - 1883:1883
-        options: >-
-          --health-cmd "mosquitto_sub -h localhost -t test -C 1 --quiet &"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
-        with:
-          go-version: "stable"
-          cache: true
-
-      - name: Run integration tests
-        run: go test -v -tags integration -timeout 120s ./code/gateway/... ./code/cli/...
-        env:
-          UDAL_TEST_MQTT_BROKER: tcp://localhost:1883
-
-# ─── Go: Integration Tests (CAN via vcan0) ─────────────────────────────────────
-# Issue #25 AC: "Tested against virtual CAN (vcan0) in CI". vcan0 is a kernel
-# netdev, not a network service, so it can't reuse go-integration's Docker
-# `services:` pattern above — it's set up as a runner step instead, which
-# works because ubuntu-latest runs on a real Linux kernel (req42.adoc TC-01:
-# SocketCAN is Linux-only in the first place).
-  go-integration-can:
-    name: Go — Integration Tests (CAN)
-    needs: [go-build-test]
-    if: needs.changes.outputs.go == 'true' || github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
-        with:
-          go-version: "stable"
-          cache: true
-
-      - name: Set up vcan0
-        run: |
-          # The vcan module ships in linux-modules-extra-<kernel>, not the
-          # base ubuntu-latest runner image -- modprobe fails with "Module
-          # vcan not found" without it first.
-          sudo apt-get update
-          # Paketname je nach Runner-Kernel nicht immer verfuegbar (z.B. azure-Kernel
-          # 7.x) -> nicht hart abbrechen, vcan kann bereits im Kernel enthalten sein.
-          sudo apt-get install -y "linux-modules-extra-$(uname -r)" \
-            || sudo apt-get install -y linux-modules-extra-azure \
-            || echo "::warning::linux-modules-extra nicht installierbar, versuche modprobe direkt"
-          sudo modprobe vcan
-          sudo ip link add dev vcan0 type vcan
-          sudo ip link set up vcan0
-
-      - name: Run integration tests
-        run: go test -v -tags integration -timeout 120s ./code/gateway/internal/adapters/can/...
-        env:
-          UDAL_TEST_CAN_INTERFACE: vcan0
-
-# ─── Go: Load/Soak Test (1,000 devices, manual only) ──────────────────────────
-# Issue #43 (QR-02). Not part of ci-gate and not triggered by push/PR -- a
-# 1,000-device/30-minute run is too slow/expensive to gate every change.
-# Trigger manually via "Run workflow" (workflow_dispatch) when verifying
-# gateway resource usage under load, e.g. after touching the MQTT adapter,
-# Broker, or heartbeat code.
-  go-loadtest:
-    name: Go — Load/Soak Test (1000 devices)
-    if: github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    services:
-      mosquitto:
-        image: eclipse-mosquitto:2
-        ports:
-          - 1883:1883
-        options: >-
-          --health-cmd "mosquitto_sub -h localhost -t test -C 1 --quiet &"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
-        with:
-          go-version: "stable"
-          cache: true
-
-      - name: Run load/soak test
-        run: go test -v -tags loadtest -timeout 35m -run TestLoadSoak_1000Devices ./code/gateway/internal/adapters/mqtt/...
-        env:
-          UDAL_TEST_MQTT_BROKER: tcp://localhost:1883
-          UDAL_LOADTEST_DEVICES: "1000"
-          UDAL_LOADTEST_PUBLISH_INTERVAL: 10s
-          UDAL_LOADTEST_DURATION: 30m
-
-# ─── Rust ─────────────────────────────────────────────────────────────────────
-  rust-ci:
-    name: Rust — Build, Test, Clippy, Audit
+  rust:
+    name: rust
     needs: changes
     if: needs.changes.outputs.rust == 'true' || github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: code/sdk/rust
-    steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy, rustfmt
+    uses: ./.github/workflows/ci-rust.yml
 
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: |
-            code/sdk/rust
-            code/sdk/rust/examples/embedded-size-check
-
-      - name: Build
-        run: cargo build --all-features
-
-      - name: Test
-        run: cargo test --all-features
-
-      - name: Clippy
-        run: cargo clippy --all-features -- -D warnings
-
-      - name: Format check
-        run: cargo fmt --check
-
-      - name: Security audit
-        run: |
-          cargo install cargo-audit --quiet
-          cargo audit
-
-  # Issue #34 AC: "`no_std` feature flag compiles for `arm-none-eabi`
-  # (Cortex-M) targets" and "QR-08: flash < 8 KB, RAM < 2 KB when compiled
-  # `no_std` + MQTT-only feature flag". A separate job (not a step in
-  # rust-ci above) since it needs its own toolchain target and a
-  # standalone crate — examples/embedded-size-check isn't a workspace
-  # member of code/sdk/rust (see that crate's Cargo.toml doc comment):
-  # `cargo build --all-features` there builds for the host and enables
-  # `std` + `mqtt` together, which is a different, non-`no_std` build (see
-  # code/sdk/rust/src/lib.rs's module docs on why that's expected).
-  rust-embedded-size-check:
-    name: Rust — no_std embedded build + flash/RAM budget (QR-08)
-    needs: changes
-    if: needs.changes.outputs.rust == 'true' || github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: code/sdk/rust/examples/embedded-size-check
-    steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: thumbv7em-none-eabi
-          components: llvm-tools
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: code/sdk/rust/examples/embedded-size-check
-
-      - name: Build (no_std, mqtt feature only)
-        run: cargo build --release
-
-      - name: Check flash/RAM budget (flash < 8 KB, RAM < 2 KB)
-        run: |
-          cargo install cargo-binutils --quiet
-          SIZE_OUTPUT=$(cargo size --release -- -A)
-          echo "$SIZE_OUTPUT"
-          # `-A` (sysv format) lists one section per line: "name  size  addr".
-          # Flash = everything the linker places in FLASH (.vector_table,
-          # .text, .rodata, and .data's load-time copy); RAM = everything
-          # it places in RAM at runtime (.data, .bss) — see memory.x.
-          FLASH=$(echo "$SIZE_OUTPUT" | awk '/^\.(vector_table|text|rodata|data)[[:space:]]/ {sum += $2} END {print sum+0}')
-          RAM=$(echo "$SIZE_OUTPUT" | awk '/^\.(data|bss)[[:space:]]/ {sum += $2} END {print sum+0}')
-          echo "flash (vector_table+text+rodata+data): $FLASH bytes (limit 8192)"
-          echo "RAM (data+bss): $RAM bytes (limit 2048)"
-          FAIL=0
-          if [ "$FLASH" -ge 8192 ]; then echo "ERROR: flash usage exceeds QR-08's 8 KB budget"; FAIL=1; fi
-          if [ "$RAM" -ge 2048 ]; then echo "ERROR: RAM usage exceeds QR-08's 2 KB budget"; FAIL=1; fi
-          exit $FAIL
-
-# ─── Python ───────────────────────────────────────────────────────────────────
-  python-ci:
-    name: Python SDK — Lint, Test, Security
+  python:
+    name: python
     needs: changes
     if: needs.changes.outputs.python == 'true' || github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: code/sdk/python
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
-        with:
-          python-version: "3.12"
-          cache: pip
+    uses: ./.github/workflows/ci-python.yml
 
-      - name: Install dependencies
-        run: pip install -e ".[dev]"
-
-      - name: Lint + format (ruff)
-        run: |
-          ruff check .
-          ruff format --check .
-
-      - name: Type check (mypy)
-        run: mypy .
-
-      - name: Tests
-        run: pytest --tb=short -q
-
-      - name: Security (pip-audit)
-        run: |
-          pip install pip-audit
-          pip-audit
-
-# ─── Reflex Dashboard ─────────────────────────────────────────────────────────
-  reflex-ci:
-    name: Reflex Dashboard — Lint + Build check
-    needs: changes
-    if: needs.changes.outputs.reflex == 'true' || github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: dashboard
-    steps:
-      - uses: actions/checkout@v7
-      # dashboard/ was added in issue #19, but the "reflex" path filter
-      # above also matches code/sdk/python/** (the dashboard depends on
-      # it, issue #18) — a push to any branch/commit checked out from
-      # *before* dashboard/ existed (this workflow triggers on pushes to
-      # every branch, and a push checks out the exact pushed SHA, not a
-      # merge with current main) would still match that filter and hit
-      # this job, with no dashboard/pyproject.toml to install (code
-      # review finding, issue #19: an earlier version of this PR removed
-      # this exact guard, reasoning it was only needed until dashboard/
-      # existed — true for post-merge commits, but not for pre-existing
-      # branches still checked out at an older commit). hashFiles() only
-      # works after checkout (it reads the runner's filesystem), so this
-      # is a per-step `if`, not a job-level one — harmless once
-      # dashboard/pyproject.toml exists in the checked-out commit, which
-      # it does for every commit from this PR onward.
-      - uses: actions/setup-python@v7
-        if: hashFiles('dashboard/pyproject.toml') != ''
-        with:
-          python-version: "3.12"
-          cache: pip
-
-      - name: Install Python SDK (dashboard depends on it, issue #18)
-        if: hashFiles('dashboard/pyproject.toml') != ''
-        run: pip install -e ../code/sdk/python
-
-      - name: Install dependencies
-        if: hashFiles('dashboard/pyproject.toml') != ''
-        run: pip install -e ".[dev]"
-
-      - name: Lint (ruff)
-        if: hashFiles('dashboard/pyproject.toml') != ''
-        run: ruff check .
-
-      - name: Type check (mypy)
-        if: hashFiles('dashboard/pyproject.toml') != ''
-        run: mypy .
-
-      - name: Reflex build check
-        if: hashFiles('dashboard/pyproject.toml') != ''
-        run: reflex export --no-zip 2>&1 | grep -v "^$" || true
-
-# ─── TypeScript SDK ───────────────────────────────────────────────────────────
-  typescript-ci:
-    name: TypeScript SDK — Lint, Test, Audit
+  typescript:
+    name: typescript
     needs: changes
     if: needs.changes.outputs.typescript == 'true' || github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: code/sdk/typescript
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: code/sdk/typescript/package-lock.json
+    uses: ./.github/workflows/ci-typescript.yml
 
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Lint (eslint)
-        run: npm run lint
-
-      - name: Type check
-        run: npm run typecheck
-
-      - name: Tests
-        run: npm test
-
-      - name: Security audit
-        run: npm audit --audit-level=high
-
-# ─── Protobuf ─────────────────────────────────────────────────────────────────
-  proto-ci:
-    name: Proto — Lint + Breaking Change Check
+  reflex:
+    name: reflex
     needs: changes
-    if: needs.changes.outputs.proto == 'true' || github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0  # needed for buf breaking against main
+    if: needs.changes.outputs.reflex == 'true' || github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/ci-reflex.yml
 
-      - uses: bufbuild/buf-setup-action@v1
-        with:
-          version: "1.32.0"
-
-      - name: Proto lint
-        run: buf lint code/api/proto
-
-      - name: Breaking change check (against main)
-        if: github.event_name == 'pull_request'
-        run: |
-          git fetch origin main --depth=1 2>/dev/null || true
-          if git ls-tree origin/main -- code/api/proto/ 2>/dev/null | grep -q '\.proto'; then
-            buf breaking code/api/proto --against "https://github.com/${{ github.repository }}.git#branch=main,subdir=code/api/proto"
-          else
-            echo "No proto files on main yet — skipping breaking change check."
-          fi
-
-      - name: Generate Go stubs (verify compilable)
-        run: buf generate code/api/proto
-
-      - name: Generate OpenAPI v3 spec
-        run: |
-          npx --yes swagger2openapi code/api/openapi/udal/v1/device.swagger.json \
-            --outfile code/api/openapi/udal/v1/device.openapi.v3.json \
-            --patch
-
-      - name: Validate OpenAPI v3 spec
-        run: npx --yes @redocly/cli lint
-
-# ─── Docker ───────────────────────────────────────────────────────────────────
-  docker-build:
-    name: Docker — Build Gateway Image
-    needs: [go-build-test]
-    if: |
-      needs.changes.outputs.docker == 'true' ||
-      github.ref == 'refs/heads/main' ||
-      startsWith(github.ref, 'refs/tags/')
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: docker/setup-buildx-action@v4
-
-      - name: Build image
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          file: deployments/docker/Dockerfile
-          push: false
-          load: true
-          tags: udal-gateway:ci
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Check image size (≤ 30 MB)
-        run: |
-          SIZE=$(docker image inspect udal-gateway:ci --format='{{.Size}}')
-          LIMIT=$((30 * 1024 * 1024))
-          echo "Image size: $((SIZE / 1024 / 1024)) MB (limit: 30 MB)"
-          if [ "$SIZE" -gt "$LIMIT" ]; then
-            echo "ERROR: Docker image exceeds 30 MB limit"
-            exit 1
-          fi
-
-  demo-compose:
-    name: Demo — Docker Compose build + verify
-    # Deliberately not `needs: [go-build-test]` like docker-build above --
-    # that chain means docker-build silently skips (not fails) whenever
-    # go-build-test itself skips on a non-Go change, even if its own `if:`
-    # condition would otherwise be true (issue #30 PR review). This job
-    # builds the gateway image itself via `compose up --build`, so it has
-    # no such prerequisite.
+  proto-schema:
+    name: proto-schema
     needs: changes
-    if: needs.changes.outputs.docker == 'true' || github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
+    if: needs.changes.outputs.proto == 'true' || needs.changes.outputs.schema == 'true' || github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/ci-proto-schema.yml
+    with:
+      proto: ${{ needs.changes.outputs.proto == 'true' || github.ref == 'refs/heads/main' }}
+      schema: ${{ needs.changes.outputs.schema == 'true' || github.ref == 'refs/heads/main' }}
 
-      # docker compose v2 + curl + jq are all preinstalled on this runner
-      # image -- no setup steps needed. TEAR_DOWN=1 so the stack doesn't
-      # linger past this job.
-      - name: Build, start, and verify the demonstrator stack
-        run: TEAR_DOWN=1 bash examples/verify-demo.sh
-
-# ─── Capability Schema Validation ────────────────────────────────────────────
-  schema-validate:
-    name: Schema — Validate capability examples
+  deploy:
+    name: deploy
     needs: changes
-    if: needs.changes.outputs.schema == 'true' || github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
+    if: needs.changes.outputs.docker == 'true' || needs.changes.outputs.helm == 'true' || github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/ci-deploy.yml
+    with:
+      docker: ${{ needs.changes.outputs.docker == 'true' || github.ref == 'refs/heads/main' }}
+      helm: ${{ needs.changes.outputs.helm == 'true' || github.ref == 'refs/heads/main' }}
 
-      - uses: actions/setup-python@v7
-        with:
-          python-version: "3.12"
-
-      - name: Install check-jsonschema
-        run: pip install check-jsonschema
-
-      - name: Validate all examples against meta-schema
-        run: |
-          check-jsonschema \
-            --schemafile schema/udal-capability.schema.json \
-            schema/examples/*.json
-
-# ─── SPDX Header Check + Auto-fix ────────────────────────────────────────────
-# On PRs:        fails the build if any source file is missing its SPDX header.
-# On main push:  adds missing headers and commits them ([skip ci] prevents loop),
-#                then verifies with --check so a broken script is still caught.
-  spdx-check:
-    name: SPDX — Header check
+  repo:
+    name: repo
     needs: changes
-    if: needs.changes.outputs.spdx == 'true' || github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Add missing SPDX headers
-        run: python3 scripts/add-spdx-headers.py
-
-      - name: Commit added headers (main push only)
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git diff --quiet && echo "No missing headers." || \
-            (git commit -am "chore - add missing SPDX headers [skip ci]" && git push)
-
-      - name: Verify all headers present
-        run: python3 scripts/add-spdx-headers.py --check
-
-# ─── Architecture Validation ──────────────────────────────────────────────────
-  architecture-validate:
-    name: Architecture — Validate Bausteinsicht model
-    needs: changes
-    if: needs.changes.outputs.architecture == 'true' || github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
-        with:
-          go-version: "stable"
-
-      - name: Install bausteinsicht
-        run: go install github.com/docToolchain/Bausteinsicht/cmd/bausteinsicht@latest
-
-      - name: Validate architecture model
-        run: bausteinsicht validate --model architecture.jsonc
-
-# ─── Helm ─────────────────────────────────────────────────────────────────────
-  helm-lint:
-    name: Helm — lint udal-gateway chart
-    needs: changes
-    if: needs.changes.outputs.helm == 'true' || github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: azure/setup-helm@v4
-        with:
-          version: "latest"
-
-      - name: helm lint
-        run: |
-          helm lint deployments/helm/udal-gateway \
-            --set gateway.apiKey="ci:admin:ci-secret"
+    if: needs.changes.outputs.spdx == 'true' || needs.changes.outputs.architecture == 'true' || github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/ci-repo.yml
+    with:
+      spdx: ${{ needs.changes.outputs.spdx == 'true' || github.ref == 'refs/heads/main' }}
+      architecture: ${{ needs.changes.outputs.architecture == 'true' || github.ref == 'refs/heads/main' }}
 
 # ─── Summary Gate ─────────────────────────────────────────────────────────────
   ci-gate:
     name: CI Gate (all checks passed)
-    needs:
-      - go-build-test
-      - go-lint
-      - go-security
-      - release-dry-run
-      - go-integration
-      - go-integration-can
-      - rust-ci
-      - python-ci
-      - reflex-ci
-      - typescript-ci
-      - proto-ci
-      - docker-build
-      - demo-compose
-      - schema-validate
-      - architecture-validate
-      - spdx-check
-      - helm-lint
+    needs: [go, rust, python, typescript, reflex, proto-schema, deploy, repo]
     if: always()
     runs-on: ubuntu-latest
     steps:
