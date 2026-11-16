@@ -1,23 +1,10 @@
 name: Docs
 
+# PDF-Build laeuft auf Forgejo; hier nur noch Release-Anhang beim gespiegelten Tag.
 on:
   push:
-    branches: [main]
-    # paths filter does not apply to tag pushes, so the PDF is always built
-    # on a version tag regardless of which files changed.
     tags:
       - "v*.*.*"
-    paths:
-      - "docs/arc42/arc42.adoc"
-      - "docs/arc42/**"
-      - "architecture.jsonc"
-      - ".github/workflows/docs.yml"
-  pull_request:
-    paths:
-      - "docs/arc42/arc42.adoc"
-      - "docs/arc42/**"
-      - "architecture.jsonc"
-      - ".github/workflows/docs.yml"
   workflow_dispatch:
     inputs:
       release_tag:
