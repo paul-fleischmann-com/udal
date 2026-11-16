@@ -25,7 +25,7 @@ jobs:
   build-pdf:
     name: Build arc42 PDF
     runs-on: ubuntu-latest
-        steps:
+    steps:
       - uses: actions/checkout@v7
 
       # ── 1. bausteinsicht ──────────────────────────────────────────────────────
