@@ -106,6 +106,9 @@ jobs:
 
       - name: Upload coverage
         uses: actions/upload-artifact@v3  # v4+ wird von Forgejo nicht unterstuetzt
+        # Vorerst nicht blockierend: Node im Job vertraut dem TLS-Zertifikat von git.local
+        # nicht ("self-signed certificate"). Entfernen, sobald die CA im Job ankommt.
+        continue-on-error: true
         with:
           name: go-coverage
           path: coverage.out
