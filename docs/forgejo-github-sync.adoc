@@ -31,7 +31,7 @@ github  https://github.com/paul-fleischmann-com/udal.git  # nur Lesen/Notfall
 == Einrichtung (einmalig)
 
 . Forgejo-Repo anlegen: _Neue Migration_ von GitHub (uebernimmt Issues/PRs/Labels) oder leer anlegen und `git push origin --all --tags`.
-. Forgejo-Secret `GITHUB_MIRROR_TOKEN` setzen (GitHub-PAT, Fine-grained, `Contents: write` auf dieses Repo).
+. Forgejo-Secret `MIRROR_GITHUB_TOKEN` setzen (GitHub-PAT, Fine-grained, `Contents: write` auf dieses Repo).
 . Runner-Label pruefen: Workflows nutzen `ubuntu-latest`; ggf. an Factory-Runner anpassen. Fuer die CAN-Integration (`modprobe vcan`) und Docker-Jobs braucht der Runner einen Host-Kernel/Docker-Zugriff (privileged bzw. Docker-Socket).
 . GitHub: Branch-Protection auf `main` (Push nur durch den Token-Inhaber, keine Direkt-PR-Merges), Issues/PR-Hinweis auf Forgejo (z.B. `.github/PULL_REQUEST_TEMPLATE.md`).
 . Einmalig: Repository-Variable/Secrets fuer Release (`GITHUB_TOKEN` genuegt auf GitHub).

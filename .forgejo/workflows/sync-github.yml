@@ -1,7 +1,7 @@
 # Forgejo (git.local) ist Source of Truth. Dieser Job spiegelt NUR main und
 # Release-Tags (v*) nach GitHub (oeffentliche Publikation). Kein Force-Push:
 # Divergiert GitHub (z.B. versehentlicher Direkt-Merge), schlaegt der Job fehl.
-# Benoetigtes Secret: GITHUB_MIRROR_TOKEN (PAT/Fine-grained, Contents: write).
+# Benoetigtes Secret: MIRROR_GITHUB_TOKEN (PAT/Fine-grained, Contents: write).
 name: Sync to GitHub
 
 on:
@@ -23,9 +23,9 @@ jobs:
 
       - name: Push ref to GitHub
         env:
-          TOKEN: ${{ secrets.GITHUB_MIRROR_TOKEN }}
+          TOKEN: ${{ secrets.MIRROR_GITHUB_TOKEN }}
           REF: ${{ github.ref }}
         run: |
           set -euo pipefail
-          test -n "$TOKEN" || { echo "Secret GITHUB_MIRROR_TOKEN fehlt"; exit 1; }
+          test -n "$TOKEN" || { echo "Secret MIRROR_GITHUB_TOKEN fehlt"; exit 1; }
           git push "https://x-access-token:${TOKEN}@github.com/paul-fleischmann-com/udal.git" "${REF}:${REF}"
