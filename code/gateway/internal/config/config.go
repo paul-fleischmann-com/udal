@@ -128,7 +128,7 @@ type CANAdapter struct {
 // to the gateway's existing defaults via ResolveString/ResolveInt. A
 // present-but-malformed file is a hard error.
 func Load(path string) (*Config, error) {
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) // #nosec G304 -- Konfigpfad kommt vom Betreiber (Flag/Umgebungsvariable), keine Nutzereingabe
 	if os.IsNotExist(err) {
 		return &Config{}, nil
 	}

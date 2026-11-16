@@ -42,7 +42,7 @@ func runSchemaPublishCmd(args []string) int {
 // stdout/stderr output and exit code, without a subprocess or a real
 // listening port.
 func cmdSchemaPublish(ctx context.Context, client udalv1.CapabilityServiceClient, stdout, stderr io.Writer, path string) int {
-	raw, err := os.ReadFile(path)
+	raw, err := os.ReadFile(path) // #nosec G304 -- CLI-Argument des Aufrufers, der die Datei ohnehin lesen darf
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "udal: read %s: %v\n", path, err)
 		return 1
