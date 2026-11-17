@@ -1,6 +1,6 @@
 # Forgejo-Variante von .github/workflows/ci-repo.yml (#213). Gleiche Struktur wie GHA (Orchestrator +
 # workflow_call). Abweichungen zu GHA: upload-artifact@v3 (nicht blockierend, TLS), kein type=gha
-# Cache, buf breaking gegen lokales origin/main, SPDX-Auto-Commit auf main-Push.
+# Cache, buf breaking gegen lokales origin/main.
 name: CI — Repo (SPDX, Architektur)
 
 on:
@@ -14,30 +14,21 @@ on:
         default: true
 
 jobs:
-  # PR: schlaegt fehl, wenn einer Quelldatei der SPDX-Header fehlt.
-  # Push auf main: fuegt fehlende Header hinzu und committet ([skip ci]), danach --check.
+  # Schlaegt fehl, wenn einer Quelldatei der SPDX-Header fehlt (kein Auto-Commit,
+  # kein Schreibrecht noetig, #218). Beheben: python3 scripts/add-spdx-headers.py.
   spdx-check:
     name: SPDX — Header check
     if: inputs.spdx
-    permissions:
-      contents: write
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
 
-      - name: Add missing SPDX headers
-        run: python3 scripts/add-spdx-headers.py
-
-      - name: Commit added headers (main push only)
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+      - name: Verify all SPDX headers present
         run: |
-          git config user.name "forgejo-actions[bot]"
-          git config user.email "forgejo-actions[bot]@noreply.git.local"
-          git diff --quiet && echo "No missing headers." || \
-            (git commit -am "chore - add missing SPDX headers [skip ci]" && git push)
-
-      - name: Verify all headers present
-        run: python3 scripts/add-spdx-headers.py --check
+          python3 scripts/add-spdx-headers.py --check || {
+            echo "::error::Fehlende SPDX-Header. Lokal 'python3 scripts/add-spdx-headers.py' ausfuehren und die Aenderungen committen."
+            exit 1
+          }
 
   architecture-validate:
     name: Architecture — Validate Bausteinsicht model
