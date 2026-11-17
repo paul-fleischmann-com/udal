@@ -182,8 +182,6 @@ jobs:
     needs: changes
     if: needs.changes.outputs.spdx == 'true' || needs.changes.outputs.architecture == 'true'
     uses: ./.forgejo/workflows/ci-repo.yml
-    permissions:
-      contents: write
     with:
       spdx: ${{ needs.changes.outputs.spdx == 'true' }}
       architecture: ${{ needs.changes.outputs.architecture == 'true' }}

@@ -11,9 +11,8 @@ on:
         default: true
 
 jobs:
-  # Schlaegt fehl, wenn einer Quelldatei der SPDX-Header fehlt. Das fruehere
-  # Auto-Commit auf main (push) entfaellt: Dieser Workflow laeuft nur noch bei
-  # pull_request (Entwicklung/volle CI laeuft auf Forgejo).
+  # Schlaegt fehl, wenn einer Quelldatei der SPDX-Header fehlt (kein Auto-Commit,
+  # kein Schreibrecht noetig, #218). Beheben: python3 scripts/add-spdx-headers.py.
   spdx-check:
     name: SPDX — Header check
     if: inputs.spdx
@@ -21,11 +20,12 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Add missing SPDX headers
-        run: python3 scripts/add-spdx-headers.py
-
-      - name: Verify all headers present
-        run: python3 scripts/add-spdx-headers.py --check
+      - name: Verify all SPDX headers present
+        run: |
+          python3 scripts/add-spdx-headers.py --check || {
+            echo "::error::Fehlende SPDX-Header. Lokal 'python3 scripts/add-spdx-headers.py' ausfuehren und die Aenderungen committen."
+            exit 1
+          }
 
   architecture-validate:
     name: Architecture — Validate Bausteinsicht model
